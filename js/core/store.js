@@ -91,14 +91,28 @@ export function createStore({ repo, now = () => Date.now() }) {
     },
 
     moveItem(id, x, y, opts = {}) {
+      return store.moveItems([{ id, x, y }], { ...opts, raise: id });
+    },
+
+    // Several moves as ONE undo step (a drop plus the blobs it pushed aside).
+    // `raise` brings that item to the front.
+    moveItems(moves, opts = {}) {
       return commit(opts.coalesce, (doc, t) => {
-        const item = doc.items[id];
-        if (!item || (item.x === x && item.y === y)) return false;
-        item.x = x;
-        item.y = y;
-        const top = maxZ(doc);
-        if (item.z < top) item.z = top + 1;
-        item.updatedAt = t;
+        let changed = false;
+        for (const m of moves) {
+          const item = doc.items[m.id];
+          if (!item || (item.x === m.x && item.y === m.y)) continue;
+          item.x = m.x;
+          item.y = m.y;
+          item.updatedAt = t;
+          changed = true;
+        }
+        if (!changed) return false;
+        const raised = opts.raise && doc.items[opts.raise];
+        if (raised) {
+          const top = maxZ(doc);
+          if (raised.z < top) raised.z = top + 1;
+        }
       });
     },
 

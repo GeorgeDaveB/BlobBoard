@@ -1,12 +1,10 @@
 // Builds and updates one item on the board.
-// Structure: .item (position, moved by JS) > .item-jelly (liquid physics, JS)
-// > .item-body (shape + CSS animation). Each layer owns its own `transform`,
-// so dragging, physics and the morph animation never fight each other.
+// Structure: .item (position, moved by JS) > .item-jelly (physics transform)
+// > .item-body (outline set by physics + CSS bob). Each layer owns its own
+// `transform`, so dragging, physics and the bob never fight each other.
 import { textColorFor } from '../services/color.js';
 import { seededRandom } from '../core/ids.js';
-import { createJelly } from './jelly.js';
-
-const MORPH_VARIANTS = 4;
+import { createPhysics } from './physics.js';
 
 export function createItemEl(item, { onEdit }) {
   const el = document.createElement('div');
@@ -41,19 +39,15 @@ export function createItemEl(item, { onEdit }) {
   el.append(jellyLayer, edit);
   applyMotion(body, item.seed);
   el._parts = { body, title, notes };
-  el._jelly = createJelly(jellyLayer);
+  el._phys = createPhysics(jellyLayer, body, item.seed);
   return el;
 }
 
-// Same seed -> same shape and timing on every device. Negative delays start
+// Bob timing from the seed (same on every device); a negative delay starts
 // each blob at a different point so they don't move in sync.
 function applyMotion(body, seed) {
-  const r = seededRandom(seed);
-  body.classList.add('m' + Math.floor(r() * MORPH_VARIANTS));
-  const md = 9 + r() * 5;
+  const r = seededRandom((seed ^ 0x5bd1e995) >>> 0);
   const bd = 5 + r() * 2;
-  body.style.setProperty('--md', md.toFixed(2) + 's');
-  body.style.setProperty('--mdl', (-r() * md).toFixed(2) + 's');
   body.style.setProperty('--bd', bd.toFixed(2) + 's');
   body.style.setProperty('--bdl', (-r() * bd).toFixed(2) + 's');
 }

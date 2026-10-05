@@ -23,48 +23,23 @@
   background: var(--c, #ff8a7a);
   color: var(--tc, #1f1d1a);
   box-shadow: var(--shadow-1);
-  border-radius: 50%;
-  animation:
-    morph0 var(--md, 11s) ease-in-out var(--mdl, 0s) infinite,
-    bob var(--bd, 6s) ease-in-out var(--bdl, 0s) infinite;
+  border-radius: 50%; /* the living outline is set by js/ui/physics.js */
+  animation: bob var(--bd, 6s) ease-in-out var(--bdl, 0s) infinite;
   transition: box-shadow .15s ease, opacity .2s ease, filter .2s ease;
 }
-.item-body.m1 { animation-name: morph1, bob; }
-.item-body.m2 { animation-name: morph2, bob; }
-.item-body.m3 { animation-name: morph3, bob; }
 
-/* Horizontal radius pairs add up to 100% so the outline stays smooth. */
-@keyframes morph0 {
-  0%, 100% { border-radius: 60% 40% 55% 45% / 55% 45% 60% 40%; }
-  33%      { border-radius: 45% 55% 40% 60% / 60% 40% 55% 45%; }
-  66%      { border-radius: 55% 45% 60% 40% / 45% 55% 40% 60%; }
-}
-@keyframes morph1 {
-  0%, 100% { border-radius: 42% 58% 60% 40% / 50% 42% 58% 50%; }
-  50%      { border-radius: 58% 42% 40% 60% / 42% 58% 50% 50%; }
-}
-@keyframes morph2 {
-  0%, 100% { border-radius: 50% 50% 45% 55% / 60% 50% 50% 40%; }
-  25%      { border-radius: 60% 40% 50% 50% / 45% 55% 45% 55%; }
-  75%      { border-radius: 40% 60% 55% 45% / 55% 45% 60% 40%; }
-}
-@keyframes morph3 {
-  0%, 100% { border-radius: 55% 45% 50% 50% / 45% 50% 50% 55%; }
-  40%      { border-radius: 45% 55% 58% 42% / 58% 42% 45% 55%; }
-  70%      { border-radius: 52% 48% 42% 58% / 48% 60% 40% 52%; }
-}
 @keyframes bob {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-3px); }
 }
 
-/* Battery: pause when off screen or while panning/zooming/dragging. */
+/* Battery: pause the bob when off screen or while panning/zooming/dragging. */
 .item.offscreen .item-body,
 .board.moving .item-body,
 .item.dragging .item-body { animation-play-state: paused; }
 
 @media (prefers-reduced-motion: reduce) {
-  .item-body { animation: none; border-radius: 50%; }
+  .item-body { animation: none; }
 }
 
 .item-title {

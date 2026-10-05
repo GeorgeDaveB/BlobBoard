@@ -1,8 +1,9 @@
 // The canvas you see: pan/zoom, rendering items by id, dragging, auto-pan.
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, itemRect } from '../services/geometry.js';
-import { findFreeSpot, NEW_ITEM_SIZE } from '../services/layout.js';
+import { findFreeSpot, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps } from '../services/layout.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
 import { attachGestures } from './gestures.js';
+import { setPaused } from './physics.js';
 
 const EDGE = 48;        // auto-pan zone at the screen edge while dragging (px)
 const EDGE_SPEED = 14;  // max auto-pan speed (px per frame)
@@ -39,13 +40,21 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
       const next = { w: el.offsetWidth, h: el.offsetHeight };
       const prev = sizes.get(id);
       sizes.set(id, next);
-      if (prev && (prev.w !== next.w || prev.h !== next.h) && el._jelly) el._jelly.resized(prev, next);
+      if (prev && (prev.w !== next.w || prev.h !== next.h)) el._phys.resized(prev, next);
     }
   });
   // Pause animation for items off screen (battery).
   const io = new IntersectionObserver(entries => {
-    for (const en of entries) en.target.classList.toggle('offscreen', !en.isIntersecting);
+    for (const en of entries) {
+      en.target.classList.toggle('offscreen', !en.isIntersecting);
+      en.target._phys.visible = en.isIntersecting;
+    }
   }, { root: boardEl, rootMargin: '120px' });
+
+  function setMoving(on) {
+    boardEl.classList.toggle('moving', on);
+    setPaused(on);
+  }
 
   const rect = () => boardEl.getBoundingClientRect();
   const sizeOf = id => sizes.get(id) || NEW_ITEM_SIZE;
@@ -86,6 +95,7 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
       if (seen.has(id)) continue;
       ro.unobserve(el);
       io.unobserve(el);
+      el._phys.dispose();
       el.remove();
       els.delete(id);
       sizes.delete(id);
@@ -100,6 +110,34 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
     drag.x = Math.round(wp.x - drag.grabX);
     drag.y = Math.round(wp.y - drag.grabY);
     positionEl(drag.el, drag.x, drag.y);
+    updateContacts();
+  }
+
+  // Blobs the dragged one overlaps get their facing edge pressed flat (they
+  // don't move); the dragged blob is pressed back the same way.
+  let touching = new Map();
+  function updateContacts() {
+    const me = ellipseOf({ id: drag.id, x: drag.x, y: drag.y }, sizeOf(drag.id));
+    const now = new Map();
+    const mine = [];
+    for (const [id, el] of els) {
+      if (id === drag.id) continue;
+      const it = store.item(id);
+      if (!it) continue;
+      const c = ellipseContact(ellipseOf(it, sizeOf(id)), me);
+      if (!c) continue;
+      now.set(id, el);
+      el._phys.setContacts([c]);
+      mine.push({ ux: -c.ux, uy: -c.uy, s: c.s });
+    }
+    for (const [id, el] of touching) if (!now.has(id)) el._phys.setContacts([]);
+    touching = now;
+    drag.el._phys.setContacts(mine);
+  }
+
+  function clearContacts() {
+    for (const el of touching.values()) el._phys.setContacts([]);
+    touching = new Map();
   }
 
   function autoPanTick() {
@@ -120,23 +158,48 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
   function finishDrag() {
     cancelAnimationFrame(rafPan);
     const d = drag;
-    d.el._jelly.drop();
+    clearContacts();
+    d.el._phys.setContacts([]);
+    d.el._phys.drop();
     d.el.classList.remove('dragging');
     boardEl.classList.remove('dragging-item');
     drag = null;
     return d;
   }
 
+  // Drop: the dragged blob stays where it was let go; any blobs under it are
+  // pushed aside by the minimum amount, and they push their neighbours too.
+  // Everything is one undo step; pushed blobs glide to their new places.
+  function dropAt(d) {
+    const list = boardItems().map(it =>
+      ellipseOf(it.id === d.id ? { id: it.id, x: d.x, y: d.y } : it, sizeOf(it.id)));
+    const pushed = resolveOverlaps(list, d.id);
+    const moves = [{ id: d.id, x: d.x, y: d.y }];
+    const from = new Map();
+    for (const [id, p] of pushed) {
+      const it = store.item(id);
+      from.set(id, { x: it.x, y: it.y });
+      moves.push({ id, x: Math.round(p.cx), y: Math.round(p.cy - sizeOf(id).h / 2) });
+    }
+    store.moveItems(moves, { raise: d.id });
+    render();
+    for (const m of moves.slice(1)) {
+      const o = from.get(m.id);
+      const el = els.get(m.id);
+      if (el) el._phys.glideFrom(o.x - m.x, o.y - m.y);
+    }
+  }
+
   attachGestures(boardEl, {
     tapItem: id => {
       const el = els.get(id);
-      if (el) el._jelly.poke(0.06);
+      if (el) el._phys.poke(0.06);
       store.select(id);
     },
     contextItem: id => { store.select(id); onEdit(id); },
     holdStart: id => {
       const el = els.get(id);
-      if (el) { el.classList.add('holding'); el._jelly.poke(-0.08); }
+      if (el) { el.classList.add('holding'); el._phys.poke(-0.08); }
       if (navigator.vibrate) navigator.vibrate(15);
     },
     holdEnd: (id, released) => {
@@ -154,8 +217,8 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
       el.classList.add('dragging');
       el.style.zIndex = 1000000;
       boardEl.classList.add('dragging-item');
-      el._jelly.pickUp();
-      el._jelly.pointer(sx, sy, performance.now());
+      el._phys.pickUp();
+      el._phys.pointer(sx, sy, performance.now());
       store.select(id);
       rafPan = requestAnimationFrame(autoPanTick);
     },
@@ -163,24 +226,22 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
       if (!drag) return;
       drag.px = cx;
       drag.py = cy;
-      drag.el._jelly.pointer(cx, cy, performance.now());
+      drag.el._phys.pointer(cx, cy, performance.now());
       updateDrag();
     },
     dragEnd: () => {
       if (!drag) return;
-      const d = finishDrag();
-      store.moveItem(d.id, d.x, d.y);
-      render();
+      dropAt(finishDrag());
     },
     dragCancel: () => {
       if (!drag) return;
       finishDrag();
       render();
     },
-    panStart: () => boardEl.classList.add('moving'),
+    panStart: () => setMoving(true),
     pan: (dx, dy) => { view.x += dx; view.y += dy; applyView(); },
-    panEnd: () => boardEl.classList.remove('moving'),
-    pinchStart: () => boardEl.classList.add('moving'),
+    panEnd: () => setMoving(false),
+    pinchStart: () => setMoving(true),
     pinch: (factor, mx, my, dx, dy) => {
       const r = rect();
       view = zoomAt(view, mx - r.left, my - r.top, factor);
@@ -188,7 +249,7 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
       view.y += dy;
       applyView();
     },
-    pinchEnd: () => boardEl.classList.remove('moving'),
+    pinchEnd: () => setMoving(false),
     tapEmpty: () => { store.select(null); if (onTapEmpty) onTapEmpty(); },
     doubleTapEmpty: (cx, cy) => {
       const r = rect();
@@ -211,9 +272,9 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
       view.y -= e.deltaY * unit;
     }
     applyView();
-    boardEl.classList.add('moving');
+    setMoving(true);
     clearTimeout(wheelTimer);
-    wheelTimer = setTimeout(() => boardEl.classList.remove('moving'), 150);
+    wheelTimer = setTimeout(() => setMoving(false), 150);
   }, { passive: false });
 
   const board = {

@@ -63,6 +63,17 @@ export const tests = {
     assert(store.item(a).z > store.item(b).z);
   },
 
+  'moveItems: a drop plus pushed blobs is one undo step': () => {
+    const { store } = setup();
+    const a = store.createItem({ x: 0, y: 0 });
+    const b = store.createItem({ x: 50, y: 0 });
+    store.moveItems([{ id: a, x: 10, y: 10 }, { id: b, x: 200, y: 0 }], { raise: a });
+    assertEqual([store.item(a).x, store.item(b).x], [10, 200]);
+    assert(store.item(a).z > store.item(b).z, 'dropped item on top');
+    store.undo();
+    assertEqual([store.item(a).x, store.item(b).x], [0, 50]);
+  },
+
   'delete removes everything inside and touching lines; undo restores': () => {
     const { store } = setup();
     const a = store.createItem({ title: 'group' });

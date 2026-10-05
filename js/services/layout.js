@@ -1,5 +1,64 @@
 import { rectsOverlap } from './geometry.js';
 
+// ---- blobs as ellipses ----------------------------------------------------
+// e = { id, cx, cy, a, b }: centre and half-width / half-height.
+
+export function ellipseOf(item, size) {
+  return { id: item.id, cx: item.x, cy: item.y + size.h / 2, a: size.w / 2, b: size.h / 2 };
+}
+
+// Distance from the centre to the outline in direction (ux, uy).
+export function support(e, ux, uy) {
+  return (e.a * e.b) / Math.sqrt((e.b * ux) ** 2 + (e.a * uy) ** 2);
+}
+
+// How hard B is pressing on A. Returns null, or { ux, uy, s }: unit direction
+// from A towards B, and strength 0..1 (starts `margin` px before touching).
+export function ellipseContact(A, B, margin = 6) {
+  let dx = B.cx - A.cx, dy = B.cy - A.cy;
+  let dist = Math.hypot(dx, dy);
+  if (dist < 1e-6) { dx = 0; dy = -1; dist = 1e-6; }
+  const ux = dx / dist, uy = dy / dist;
+  const reach = support(A, ux, uy) + support(B, -ux, -uy) + margin;
+  const overlap = reach - dist;
+  if (overlap <= 0) return null;
+  const scale = Math.min(support(A, ux, uy), support(B, -ux, -uy));
+  return { ux, uy, s: Math.min(1, overlap / Math.max(1, scale)) };
+}
+
+// After dropping `fixedId`, pushes overlapping blobs out of the way by the
+// smallest amount along the line between centres; anything they then hit is
+// pushed too (chain reaction). The dropped blob never moves. Blobs that
+// weren't involved stay put. Returns Map id -> { cx, cy } of moved blobs.
+export function resolveOverlaps(list, fixedId, gap = 10, maxPushes = 400) {
+  const byId = new Map(list.map(e => [e.id, { ...e }]));
+  if (!byId.has(fixedId)) return new Map();
+  const moved = new Set();
+  const queue = [fixedId];
+  let pushes = 0;
+  while (queue.length && pushes < maxPushes) {
+    const A = byId.get(queue.shift());
+    for (const B of byId.values()) {
+      if (B.id === A.id || B.id === fixedId) continue;
+      let dx = B.cx - A.cx, dy = B.cy - A.cy;
+      let dist = Math.hypot(dx, dy);
+      if (dist < 1e-6) { dx = 0; dy = 1; dist = 1e-6; }
+      const ux = dx / dist, uy = dy / dist;
+      const need = support(A, ux, uy) + support(B, ux, uy) + gap;
+      if (dist >= need - 0.5) continue;
+      const push = need - dist;
+      B.cx += ux * push;
+      B.cy += uy * push;
+      moved.add(B.id);
+      pushes++;
+      if (!queue.includes(B.id)) queue.push(B.id);
+    }
+  }
+  const out = new Map();
+  for (const id of moved) out.set(id, { cx: byId.get(id).cx, cy: byId.get(id).cy });
+  return out;
+}
+
 export const NEW_ITEM_SIZE = { w: 140, h: 100 };
 
 // Finds the nearest spot to (cx, top) where a w x h item doesn't overlap any of
