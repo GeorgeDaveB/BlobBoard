@@ -343,7 +343,8 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 **`ui/itemView.js` — one item**
 - Builds the blob or card (per R8), title, notes (cut off with "…"), up to 3 tag chips (+N more), ✓ when done, mini shapes + badge when collapsed, the tray when expanded.
 - Two sizes: normal, and **mini** (~60%, used in trays) — same component.
-- Animation: an outer element holds the position (moved by JavaScript); an inner element does the CSS animation (shape morph over ~9–14 s, gentle bob of ±3 px), started at a random point per item. Keeping them separate stops dragging and animation fighting over the same property.
+- Animation: three layers — `.item` holds the position (moved by JavaScript), `.item-jelly` carries the physics transform, `.item-body` has the outline (set by physics) and a CSS bob of ±3 px. Each layer owns its own `transform`, so they never fight.
+- **Physics (`ui/physics.js`, v2):** one shared loop. Idle on-screen blobs update their organic outline ~30×/s (15×/s automatically if the loop gets slow). While dragging: the front is pressed flat by "air" and the blob squeezes slightly front-to-back (no long stretch); swells when picked up, splats and wobbles on drop. Hovering over another blob flattens both touching edges without moving it. Dropping pushes overlapped blobs aside by the minimum distance, and pushed blobs push their neighbours (chain reaction; one undo step; pushed blobs glide). Size changes (notes) spring with overshoot. Off with "reduce motion". Rollback point for v1 physics: git tag `physics-v1`.
 - Blob ↔ card switch: measures the old and new shape and animates between them; text fades during the 300 ms morph so it doesn't stretch.
 
 **`ui/tray.js` — expanded view (R16, R17)**
@@ -455,12 +456,12 @@ All buttons are at least 40 × 40 px on touch screens.
 
 - **Board** — warm off-white with a faint dot grid; white cards; soft layered shadows; 18 px corner radius.
 - **8 base colours** (soft, Pinterest-like): coral, tangerine, sunflower, mint, teal, sky, lavender, rose.
-- **Blob** — organic shape from 8-value CSS `border-radius` keyframes (4 variants, chosen by `seed`), with enough padding that text never touches the moving edge. Width 110–200 px depending on the title; grows with notes up to ~240 × 300 px, then "…".
+- **Blob** — organic outline from 4 slow oscillators driving the 8-value `border-radius` (timing from `seed`), with enough padding that text never touches the moving edge. Width 110–200 px depending on the title; grows with notes up to ~240 × 300 px, then "…".
 - **Card** — 180 px wide; the picture keeps its own shape (height/width limited to 0.6–1.6); the title sits on a dark see-through pill at the bottom of the picture (readable on any picture); notes and tags underneath.
 - **Mini shapes** — 2 rows × 3, ~14 px each, wobbling slightly, tinted with the colours of the first 6 inside items; badge "1"–"6" or "6+" at the corner.
 - **Done** — greyed out (less colour, lower opacity) + ✓ badge.
 - **Filter** — non-matching items at ~20% opacity.
-- **Dragging** — the dragged item lifts (bigger shadow, slight tilt); an armed target swells 12% with a coloured glow.
+- **Dragging** — the dragged item lifts (bigger shadow, liquid physics above); blobs it touches flatten where they meet; an armed target swells 12% with a coloured glow.
 - **Motion setting** — Full (morph + bob), Calm (bob only), Off.
 
 ---
