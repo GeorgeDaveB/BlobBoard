@@ -1,0 +1,211 @@
+// The data rules. Pure functions only: no screen, no storage.
+import { uuid } from './ids.js';
+import { PALETTE, isHex } from '../services/color.js';
+
+export const SCHEMA = 1;
+export const LIMITS = { name: 100, title: 200, notes: 5000 };
+
+export function newCanvas(name, now = Date.now()) {
+  return {
+    schema: SCHEMA,
+    id: 'c-' + uuid(),
+    name: (name || 'My first canvas').slice(0, LIMITS.name),
+    settings: { thumbnails: true },
+    createdAt: now,
+    updatedAt: now,
+    items: {},
+    links: {}
+  };
+}
+
+const EDITABLE = ['title', 'notes', 'color', 'done', 'thumbId', 'tagIds'];
+
+export function newItem(canvas, fields = {}, now = Date.now()) {
+  const parentId = fields.parentId || null;
+  const siblings = childrenOf(canvas, parentId);
+  const item = {
+    id: 'i-' + uuid(),
+    parentId,
+    title: '',
+    notes: '',
+    color: nextColor(canvas),
+    thumbId: null,
+    tagIds: [],
+    done: false,
+    x: 0,
+    y: 0,
+    z: maxZ(canvas) + 1,
+    order: siblings.length ? siblings[siblings.length - 1].order + 1 : 0,
+    seed: Math.floor(Math.random() * 2147483647),
+    createdAt: now,
+    updatedAt: now
+  };
+  for (const k of EDITABLE) if (k in fields) item[k] = fields[k];
+  if ('x' in fields) item.x = fields.x;
+  if ('y' in fields) item.y = fields.y;
+  return item;
+}
+
+// Applies only known editable fields; returns true if anything changed.
+export function applyItemPatch(item, patch) {
+  let changed = false;
+  for (const k of EDITABLE) {
+    if (!(k in patch)) continue;
+    let v = patch[k];
+    if (k === 'title') v = String(v).slice(0, LIMITS.title);
+    if (k === 'notes') v = String(v).slice(0, LIMITS.notes);
+    if (k === 'color' && !isHex(v)) continue;
+    if (k === 'done') v = !!v;
+    if (JSON.stringify(item[k]) !== JSON.stringify(v)) {
+      item[k] = v;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+export function nextColor(canvas) {
+  return PALETTE[Object.keys(canvas.items).length % PALETTE.length].hex;
+}
+
+export function maxZ(canvas) {
+  let z = 0;
+  for (const it of Object.values(canvas.items)) if (it.z > z) z = it.z;
+  return z;
+}
+
+export function childrenOf(canvas, parentId) {
+  return Object.values(canvas.items)
+    .filter(it => it.parentId === parentId)
+    .sort((a, b) => a.order - b.order);
+}
+
+export function descendantsOf(canvas, id) {
+  const out = [];
+  const queue = [id];
+  const seen = new Set([id]);
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const it of Object.values(canvas.items)) {
+      if (it.parentId === cur && !seen.has(it.id)) {
+        seen.add(it.id);
+        out.push(it.id);
+        queue.push(it.id);
+      }
+    }
+  }
+  return out;
+}
+
+// Parent first, up to the top level. Stops on a loop instead of hanging.
+export function ancestorsOf(canvas, id) {
+  const out = [];
+  const seen = new Set([id]);
+  let cur = canvas.items[id];
+  while (cur && cur.parentId && !seen.has(cur.parentId)) {
+    seen.add(cur.parentId);
+    out.push(cur.parentId);
+    cur = canvas.items[cur.parentId];
+  }
+  return out;
+}
+
+export function countInside(canvas, id) {
+  return childrenOf(canvas, id).length;
+}
+
+export function badgeText(n) {
+  if (n <= 0) return '';
+  return n <= 6 ? String(n) : '6+';
+}
+
+const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+const str = (v, max) => (typeof v === 'string' ? v : '').slice(0, max);
+
+// Repairs anything broken (design §6.6). Mutates and returns { doc, fixes }.
+export function sanitizeCanvas(doc) {
+  const fixes = [];
+  const now = Date.now();
+  if (!doc || typeof doc !== 'object') throw new Error('not a canvas');
+  doc.schema = SCHEMA;
+  if (typeof doc.id !== 'string' || !doc.id) { doc.id = 'c-' + uuid(); fixes.push('canvas id'); }
+  doc.name = str(doc.name, LIMITS.name) || 'Untitled canvas';
+  if (!doc.settings || typeof doc.settings !== 'object') doc.settings = {};
+  doc.settings.thumbnails = doc.settings.thumbnails !== false;
+  doc.createdAt = num(doc.createdAt, now);
+  doc.updatedAt = num(doc.updatedAt, now);
+  if (!doc.items || typeof doc.items !== 'object') doc.items = {};
+  if (!doc.links || typeof doc.links !== 'object') doc.links = {};
+
+  // Item fields
+  for (const [key, it] of Object.entries(doc.items)) {
+    if (!it || typeof it !== 'object') { delete doc.items[key]; fixes.push('bad item ' + key); continue; }
+    it.id = key;
+    it.parentId = typeof it.parentId === 'string' && it.parentId ? it.parentId : null;
+    it.title = str(it.title, LIMITS.title);
+    it.notes = str(it.notes, LIMITS.notes);
+    if (!isHex(it.color)) { it.color = PALETTE[0].hex; fixes.push('colour ' + key); }
+    it.thumbId = typeof it.thumbId === 'string' && it.thumbId ? it.thumbId : null;
+    it.tagIds = Array.isArray(it.tagIds) ? [...new Set(it.tagIds.filter(t => typeof t === 'string'))] : [];
+    it.done = it.done === true;
+    it.x = num(it.x, 0);
+    it.y = num(it.y, 0);
+    it.z = num(it.z, 0);
+    it.order = num(it.order, 0);
+    it.seed = Math.floor(num(it.seed, 1)) >>> 0;
+    it.createdAt = num(it.createdAt, now);
+    it.updatedAt = num(it.updatedAt, now);
+  }
+
+  // Missing parent -> rescue to top level
+  for (const it of Object.values(doc.items)) {
+    if (it.parentId && (!doc.items[it.parentId] || it.parentId === it.id)) {
+      it.parentId = null;
+      fixes.push('rescued ' + it.id);
+    }
+  }
+
+  // Loops -> break by moving the item that closes the loop to the top level
+  for (const it of Object.values(doc.items)) {
+    const seen = new Set([it.id]);
+    let cur = it;
+    while (cur.parentId) {
+      if (seen.has(cur.parentId)) {
+        cur.parentId = null;
+        fixes.push('loop ' + cur.id);
+        break;
+      }
+      seen.add(cur.parentId);
+      cur = doc.items[cur.parentId];
+    }
+  }
+
+  // Links: both ends exist, not the same item, same board, one per pair (newest wins)
+  const byPair = new Map();
+  for (const [key, ln] of Object.entries(doc.links)) {
+    const a = ln && doc.items[ln.from];
+    const b = ln && doc.items[ln.to];
+    if (!a || !b || a === b || a.parentId !== b.parentId) {
+      delete doc.links[key];
+      fixes.push('link ' + key);
+      continue;
+    }
+    ln.id = key;
+    ln.arrowFrom = ln.arrowFrom === true;
+    ln.arrowTo = ln.arrowTo === true;
+    ln.createdAt = num(ln.createdAt, now);
+    ln.updatedAt = num(ln.updatedAt, now);
+    const pair = [ln.from, ln.to].sort().join('|');
+    const prev = byPair.get(pair);
+    if (prev) {
+      const loser = prev.updatedAt >= ln.updatedAt ? ln : prev;
+      delete doc.links[loser.id];
+      fixes.push('duplicate link ' + loser.id);
+      byPair.set(pair, loser === ln ? prev : ln);
+    } else {
+      byPair.set(pair, ln);
+    }
+  }
+
+  return { doc, fixes };
+}

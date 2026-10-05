@@ -1,0 +1,32 @@
+/* The board: gesture surface, dotted background, transformed world layer. */
+.board {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;          /* we handle every gesture ourselves */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, var(--dot) 1.1px, transparent 1.4px);
+  cursor: grab;
+}
+.board.moving { cursor: grabbing; }
+
+.world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.items-layer { position: absolute; left: 0; top: 0; }
+
+.empty-hint {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 40%;
+  text-align: center;
+  color: var(--muted);
+  pointer-events: none;
+}

@@ -1,0 +1,158 @@
+/* Items: organic animated blob shape, title/notes, states, controls. */
+.item {
+  position: absolute;
+  left: 0;
+  top: 0;
+  cursor: pointer;
+}
+.item.dragging { cursor: grabbing; }
+
+.item-body {
+  position: relative;
+  min-width: 110px;
+  max-width: 200px;
+  min-height: 96px;
+  padding: 24px 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  background: var(--c, #ff8a7a);
+  color: var(--tc, #1f1d1a);
+  box-shadow: var(--shadow-1);
+  border-radius: 50%;
+  animation:
+    morph0 var(--md, 11s) ease-in-out var(--mdl, 0s) infinite,
+    bob var(--bd, 6s) ease-in-out var(--bdl, 0s) infinite;
+  transition: box-shadow .15s ease, opacity .2s ease, filter .2s ease;
+}
+.item-body.m1 { animation-name: morph1, bob; }
+.item-body.m2 { animation-name: morph2, bob; }
+.item-body.m3 { animation-name: morph3, bob; }
+
+/* Horizontal radius pairs add up to 100% so the outline stays smooth. */
+@keyframes morph0 {
+  0%, 100% { border-radius: 60% 40% 55% 45% / 55% 45% 60% 40%; }
+  33%      { border-radius: 45% 55% 40% 60% / 60% 40% 55% 45%; }
+  66%      { border-radius: 55% 45% 60% 40% / 45% 55% 40% 60%; }
+}
+@keyframes morph1 {
+  0%, 100% { border-radius: 42% 58% 60% 40% / 50% 42% 58% 50%; }
+  50%      { border-radius: 58% 42% 40% 60% / 42% 58% 50% 50%; }
+}
+@keyframes morph2 {
+  0%, 100% { border-radius: 50% 50% 45% 55% / 60% 50% 50% 40%; }
+  25%      { border-radius: 60% 40% 50% 50% / 45% 55% 45% 55%; }
+  75%      { border-radius: 40% 60% 55% 45% / 55% 45% 60% 40%; }
+}
+@keyframes morph3 {
+  0%, 100% { border-radius: 55% 45% 50% 50% / 45% 50% 50% 55%; }
+  40%      { border-radius: 45% 55% 58% 42% / 58% 42% 45% 55%; }
+  70%      { border-radius: 52% 48% 42% 58% / 48% 60% 40% 52%; }
+}
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+/* Battery: pause when off screen or while panning/zooming/dragging. */
+.item.offscreen .item-body,
+.board.moving .item-body,
+.item.dragging .item-body { animation-play-state: paused; }
+
+@media (prefers-reduced-motion: reduce) {
+  .item-body { animation: none; border-radius: 50%; }
+}
+
+.item-title {
+  font-weight: 650;
+  font-size: 15px;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.item-title.untitled { opacity: .55; font-style: italic; }
+
+.item-notes {
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: .85;
+  overflow-wrap: break-word;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* With notes the blob grows: wider, taller, extra padding so text stays
+   inside the rounded outline. */
+.item.has-notes .item-body {
+  width: 220px;
+  max-width: 240px;
+  min-height: 150px;
+  max-height: 300px;
+  padding: 30px 34px;
+}
+
+/* Done: greyed out + tick */
+.item-done {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  align-items: center;
+  justify-content: center;
+}
+.item.done .item-done { display: flex; }
+.item.done .item-body { filter: saturate(.2); opacity: .55; }
+.item.done .item-title { text-decoration: line-through; }
+
+/* States */
+.item.selected .item-body { box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--ink), var(--shadow-1); }
+.item.holding .item-body { box-shadow: 0 0 0 8px rgba(226, 96, 79, .35), var(--shadow-1); }
+.item.dragging .item-body { box-shadow: var(--shadow-2); }
+
+/* Controls (✎ now; ⤢ and the connect dot later). Shown on hover (PC) or
+   when selected (phone). Counter-scaled so they keep their size at any zoom. */
+.item-ctl {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 16px;
+  box-shadow: var(--shadow-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(calc(1 / var(--z, 1)));
+  transition: opacity .15s ease;
+}
+.item.selected .item-ctl { opacity: 1; pointer-events: auto; }
+@media (hover: hover) {
+  .item:hover .item-ctl { opacity: 1; pointer-events: auto; }
+}
+@media (pointer: coarse) {
+  .item-ctl { width: 40px; height: 40px; top: -10px; right: -10px; }
+}
+.item.dragging .item-ctl { opacity: 0; }
