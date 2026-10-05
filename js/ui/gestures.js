@@ -4,7 +4,7 @@
 //                         │ 500 ms still ─► holding ─moved─► drag
 //                         │                    └─up─► holdEnd(release) = edit
 //                         └─up quickly─► tapItem
-//  idle ─down on empty─► emptyPress ─moved─► pan ;  up quickly ─► tap / double-tap
+//  idle ─down on empty─► emptyPress ─moved─► pan (Select mode: box) ;  up quickly ─► tap / double-tap
 //  idle ─down on ● dot─► link ─move─► linkMove ─up─► linkEnd (cancelled: linkCancel)
 //  idle ─down on a line─► linePress ─moved─► pan ;  up quickly ─► tapLine
 //  second finger at any point ─► pinch (an item drag / new line is cancelled first)
@@ -51,6 +51,7 @@ export function attachGestures(surface, h) {
       if (mode === 'holding') h.holdEnd(itemId, false);
       if (mode === 'pan') h.panEnd();
       if (mode === 'link') h.linkCancel();
+      if (mode === 'box') h.boxCancel();
       mode = 'pinch';
       pinch = pair();
       h.pinchStart();
@@ -114,6 +115,16 @@ export function attachGestures(surface, h) {
       h.linkMove(p.x, p.y);
       return;
     }
+    if (mode === 'box') {
+      h.boxMove(p.x, p.y);
+      return;
+    }
+    if (mode === 'emptyPress' && moved && h.selectMode && h.selectMode()) {
+      mode = 'box';
+      h.boxStart(start.x, start.y, e.ctrlKey || e.metaKey || e.shiftKey);
+      h.boxMove(p.x, p.y);
+      return;
+    }
     if ((mode === 'emptyPress' || mode === 'linePress') && moved) {
       mode = 'pan';
       h.panStart();
@@ -140,7 +151,8 @@ export function attachGestures(surface, h) {
     if (!start || e.pointerId !== start.id) return;
     clearHold();
 
-    if (mode === 'pressing' && !cancelled) h.tapItem(itemId);
+    if (mode === 'pressing' && !cancelled) h.tapItem(itemId, { add: e.ctrlKey || e.metaKey || e.shiftKey });
+    else if (mode === 'box') cancelled ? h.boxCancel() : h.boxEnd();
     else if (mode === 'holding') h.holdEnd(itemId, !cancelled);
     else if (mode === 'drag') cancelled ? h.dragCancel(itemId) : h.dragEnd(itemId, e.clientX, e.clientY);
     else if (mode === 'pan') h.panEnd();

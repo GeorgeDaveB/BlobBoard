@@ -147,7 +147,7 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
     for (const r of radios) r.checked = doc.settings.insideView === r.value;
     if (document.activeElement !== slider || !sliderKey) slider.value = String(doc.settings.growth);
     showGrow(doc.settings.growth);
-    lineLook.set({ style: doc.settings.lineStyle, color: doc.settings.lineColor, width: doc.settings.lineWidth });
+    lineLook.set({ style: doc.settings.lineStyle, color: doc.settings.lineColor, width: doc.settings.lineWidth }, { width: doc.settings.lineWidth });
   }
   store.on(() => { if (sheet.classList.contains('open')) sync(); });
 

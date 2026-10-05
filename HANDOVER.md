@@ -36,15 +36,15 @@ Rule: **every change lands with (1) code, (2) tests where logic is involved, (3)
 | — | Liquid physics (v2), birth animation | ✅ done (owner-tuned) |
 | 2 | Groups: drag-hold into, mini shapes + badge, full expansion, tray **or** container view, + tile, reorder, fast drop into open grid, growth with contents | ✅ done (several owner revisions, see log) |
 | 3 | Lines between blobs ("gooey strings"), + / − arrowheads, × delete; growth pushes neighbours | ✅ done — awaiting owner's phone check |
-| 3b | Multi-select (Pan/Select mode button, selection box) | ⏭ **next** — confirm details first (§8) |
-| 4 | Pictures & cards (thumbnail toggle) | planned |
+| 3b | Multi-select (Pan/Select mode button, selection box, move/drop/delete many) | ✅ done 2026-10-06 — awaiting owner's phone check |
+| 4 | Pictures & cards (thumbnail toggle) | ⏭ **next** — confirm details first (§8) |
 | 5 | Tags + filter | planned |
 | 6 | Multiple canvases, duplicate/move to canvas | planned |
 | 7 | Export/import JSON + PNG | planned |
 | 8 | Dropbox sync (PKCE, 3-way merge) | planned — owner must create the Dropbox app (DESIGN §16) |
 | 9 | PWA polish (service worker, icons, install) | planned |
 
-Tests: **82 passing** (local + live) as of this update.
+Tests: **91 passing** (local + live) as of this update.
 
 ---
 
@@ -89,6 +89,8 @@ Tests: **82 passing** (local + live) as of this update.
 | 2026-10-05 | **R31 line look + text:** Gooey/Straight style; Gradient/Start/End/Custom colour; per-canvas default in ⚙ + per-line override; label pill at the middle (white border, line colours); line editor (✎ / tap selected line) | Owner request; "parent"/"inherited" colours confirmed as Start/End blob |
 | 2026-10-05 | Connect handle = thin black arrow icon | Owner request |
 | 2026-10-06 | Line **thickness** (Thin/Normal/Thick/Extra thick; canvas default + per line); **"Apply to all lines…"** with confirm (clears per-line choices, keeps text, one undo step); per-line choices survive default changes (test added) | Owner request |
+| 2026-10-06 | Line thickness is a **slider** (0.3×–3×) + Default chip per line | Owner request |
+| 2026-10-06 | **Phase 3b multi-select built** per DESIGN §8.7 / C13: ✋/⬚ mode button (H/V), selection box (touch = selected), Ctrl/Shift+click toggles, drag one = move all (spacing kept, others pushed, one undo), hold over a blob / drop on an open grid = all go inside (one undo), "N selected · Delete · ✕" bar + Delete key (asks if anything inside) | Spec was already approved; no new questions |
 | 2026-10-06 | **⚙ Settings is a side pane** (same `.sheet` as the editors); settings / item editor / line editor close each other (`app.js`) | Owner request |
 | 2026-10-05/06 | GitHub Pages deploys stuck "queued" (GitHub Actions degraded). Run #20 became a ghost (can't cancel). Owner told to re-run the newest run or toggle Settings → Pages source None → main | Not a code problem; unauthenticated API is 60 calls/h — check the live file instead |
 | 2026-10-05 | **Bug fix:** string folded back into big blobs — resting middle now between the edges, not the centres; swung-in middle falls back | Owner report (screenshot) |
@@ -127,6 +129,11 @@ One shared `requestAnimationFrame` loop over all items; damped springs (`[stiffn
 - Each frame (`physics.onFrame`) `board.geom(id)` gives each blob as drawn now (store/drag position + body size + `phys.visual()` offset/squash/roundness); `strandGeometry()` builds the path; DOM is written only if the path string changed.
 - Look (R31): `model.lineLook(link, settings, fromColor, toColor)` → `{ style, c0, c1 }`; gradient stops get c0/c1 (equal = solid). Straight style skips the middle spring. Labels are HTML (`.link-labels`, z 899999: above blobs, below open trays 900000 / drag 1000000), positioned at `at(0.5)`; tapping a label = tapping the line. Editors: `ui/lineSheet.js` (one line) and ⚙, both built from `ui/lineLookFields.js`.
 - Gestures: `pointerdown` on `.item-link` (connect handle) → `link` mode (`linkStart/Move/End/Cancel`); on `.link-hit` → `linePress` (tap = `tapLine`, move = pan). Only top-level blobs have a dot (CSS hides it on minis); targets come from `elementsFromPoint`.
+
+### Multi-select (`board.js`, `app.js`, store)
+- `ui.selectedIds` holds 2+ top-level ids (fixUi drops missing/inside ones; one left → `selectedId`). `.board.multi` hides per-item controls.
+- Gestures: in Select mode `emptyPress` + move → `box` (`boxStart/Move/End/Cancel`); the box is screen-space (`.select-box`), hits = `ellipseTouchesRect` in board coordinates, marked `.box-hit` live, committed with `selectMany` on release (Ctrl/Shift at start = add).
+- Group drag: `drag.group = [{ id, el, dx, dy, size }]`, `drag.groupIds`; members move with the primary, get physics pickUp/drop, are skipped by contacts and hit-tests (`.dragging`). `drop()` → `dropGroup()`: pane (`reparentItems` at the slot), armed (`reparentItems` + growKey), board (`moveItems` + `pushesForMany` with all landed blobs fixed), else snap back. `geom()` knows group positions so lines follow.
 
 ### Growth push (`board.checkGrowth`)
 Runs from the ResizeObserver for closed top-level blobs: if its inside count went up since its last closed measurement and its body got bigger → `pushesFor` + `store.moveItems`, coalesced with the drop's undo key (`growKey`) when it came straight from a drop. Skipped while the render came from undo/redo (`board.render(change)` gets `change.history`).
@@ -169,5 +176,6 @@ python -m http.server 8000
 
 - **Owner to check on the phone (phase 3):** drawing from the ● dot, tapping thin lines, + / − / × buttons, gooey look while dragging, growth push.
 - **Not built (possible later):** auto-pan while drawing a line near the screen edge; lines between inside items (minis); line labels.
-- **Phase 3b (multi-select) — confirm before building:** DESIGN §8.7 is the plan; ask how lines between selected blobs behave when moved together (they just follow), and whether a selection bar should offer "connect all".
+- **Phase 4 (pictures & cards) — confirm before building:** DESIGN R7/R8, §8.4 imageProcessor, §8.5 imageLibrary. Questions: card size/shape, where the title sits on a picture, picture size limit, what the thumbnails toggle does to blobs without a picture.
+- Possible later (not asked for): add/remove single blobs to a selection on a phone (no Ctrl there); "connect all selected".
 - Parked: inside boards/sub-canvases; Background Sync; multi-select details beyond DESIGN §8.7.

@@ -15,6 +15,8 @@ const ICONS = {
   fit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg>',
   zoomIn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   zoomOut: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>',
+  pan: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5v-6a1.5 1.5 0 0 1 3 0V11M14 10.5V6a1.5 1.5 0 0 1 3 0v5M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.6-2.2L4.6 15.4a1.6 1.6 0 0 1 2.4-2.1L8 14.5"/></svg>',
+  select: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" stroke-dasharray="3 2.6"/></svg>',
   gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
 };
 
@@ -34,7 +36,10 @@ export function mountApp({ root, store, repo }) {
   const btnIn = iconButton('zoomIn', 'Zoom in');
   const btnFit = iconButton('fit', 'Fit everything on screen');
   const btnGear = iconButton('gear', 'Settings');
-  tools.append(btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), btnGear);
+  // C13: Pan / Select mode (only changes what dragging empty space does).
+  const btnMode = iconButton('pan', 'Pan mode (H) — tap for Select mode (V)');
+  btnMode.classList.add('mode-btn');
+  tools.append(btnMode, sep(), btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), btnGear);
   top.append(name, tools);
 
   const main = document.createElement('main');
@@ -46,6 +51,24 @@ export function mountApp({ root, store, repo }) {
   fab.textContent = '+';
   root.append(top, main, fab);
   initDialogs(root);
+
+  // "N selected · Delete · ✕" bar while several items are selected (R24).
+  const selBar = document.createElement('div');
+  selBar.className = 'select-bar';
+  selBar.hidden = true;
+  const selCount = document.createElement('span');
+  selCount.className = 'select-count';
+  const selDelete = document.createElement('button');
+  selDelete.type = 'button';
+  selDelete.className = 'btn btn-danger';
+  selDelete.textContent = 'Delete';
+  const selClear = document.createElement('button');
+  selClear.type = 'button';
+  selClear.className = 'icon-btn';
+  selClear.setAttribute('aria-label', 'Clear selection');
+  selClear.textContent = '✕';
+  selBar.append(selCount, selDelete, selClear);
+  root.append(selBar);
 
   // ---- back stack -----------------------------------------------------------
   // Each open layer (editor, expanded tray) pushes one history entry
@@ -211,6 +234,40 @@ export function mountApp({ root, store, repo }) {
     openEditor(id, { key, isNew: true });
   }
 
+  // Several items at once (R24): asks first if any has items inside; one
+  // undo step.
+  async function deleteManyWithUndo(ids) {
+    const doc = store.canvas();
+    const live = ids.filter(id => doc.items[id]);
+    if (!live.length) return;
+    const inside = live.reduce((n, id) => n + descendantsOf(doc, id).length, 0);
+    if (inside > 0) {
+      const ok = await confirmDialog({
+        title: 'Delete ' + live.length + ' items?',
+        message: 'Delete ' + live.length + ' items and the ' + inside + ' item' + (inside === 1 ? '' : 's') + ' inside them?',
+        okLabel: 'Delete',
+        danger: true
+      });
+      if (!ok) return;
+    }
+    store.deleteItems(live);
+    toast('Deleted ' + live.length + ' items', { actionLabel: 'Undo', onAction: () => store.undo() });
+  }
+
+  // ---- Pan / Select mode (C13), remembered on this device ----------------------
+  function setMode(select) {
+    board.setSelectMode(select);
+    btnMode.innerHTML = ICONS[select ? 'select' : 'pan'];
+    btnMode.classList.toggle('on', select);
+    btnMode.setAttribute('aria-pressed', String(select));
+    const label = select ? 'Select mode (V): drag empty space to select — tap for Pan mode (H)' : 'Pan mode (H): drag empty space to move — tap for Select mode (V)';
+    btnMode.title = label;
+    btnMode.setAttribute('aria-label', label);
+    repo.setSetting('mode', select ? 'select' : 'pan');
+  }
+  btnMode.addEventListener('click', () => setMode(!board.selectMode));
+  repo.getSetting('mode').then(m => setMode(m === 'select')).catch(() => setMode(false));
+
   async function deleteWithUndo(id) {
     const item = store.item(id);
     if (!item) return;
@@ -241,6 +298,9 @@ export function mountApp({ root, store, repo }) {
     name.textContent = doc.name;
     btnUndo.disabled = !store.canUndo();
     btnRedo.disabled = !store.canRedo();
+    const n = store.ui.selectedIds.length;
+    selBar.hidden = n < 2;
+    if (n >= 2) selCount.textContent = n + ' selected';
   }
 
   let shownExpanded = '';
@@ -267,6 +327,8 @@ export function mountApp({ root, store, repo }) {
   btnOut.addEventListener('click', () => board.zoomBy(0.8));
   btnFit.addEventListener('click', () => board.fit());
   btnGear.addEventListener('click', openSettings);
+  selDelete.addEventListener('click', () => deleteManyWithUndo(store.ui.selectedIds));
+  selClear.addEventListener('click', () => store.select(null));
   fab.addEventListener('click', () => { const s = board.centerSpot(); createAt(s.x, s.y); });
 
   // ---- keyboard -----------------------------------------------------------
@@ -282,6 +344,9 @@ export function mountApp({ root, store, repo }) {
     const k = e.key.toLowerCase();
     if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
+    else if (!mod && k === 'h') setMode(false);
+    else if (!mod && k === 'v') setMode(true);
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && store.ui.selectedIds.length > 1) { e.preventDefault(); deleteManyWithUndo(store.ui.selectedIds); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && store.ui.selectedId) { e.preventDefault(); deleteWithUndo(store.ui.selectedId); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && store.ui.selectedLinkId) { e.preventDefault(); deleteLinkWithUndo(store.ui.selectedLinkId); }
     else if (e.key === 'Enter' && store.ui.selectedId) { e.preventDefault(); openEditor(store.ui.selectedId, { expand: true }); }

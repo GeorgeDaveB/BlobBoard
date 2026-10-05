@@ -2,7 +2,7 @@
 // tray of an expanded item), lines between them, dragging, grouping drops,
 // drawing lines, auto-pan.
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, itemRect } from '../services/geometry.js';
-import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps } from '../services/layout.js';
+import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps, ellipseTouchesRect } from '../services/layout.js';
 import { childrenOf, descendantsOf, linkProblem } from '../core/model.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
 import { renderTray, disposeTray, syncInline, removeInline } from './tray.js';
@@ -39,6 +39,12 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   let linking = null;       // drawing a new line: { from, targetId, problem }
   let fromHistory = false;  // last render was an undo/redo
   let growKey = null;       // { id, key }: the drop that will make `id` grow
+  let selectMode = false;   // C13: empty-space drag draws a selection box
+  let box = null;           // selection box in progress: { x0, y0, x1, y1, add, base, hits }
+  const boxEl = document.createElement('div');
+  boxEl.className = 'select-box';
+  boxEl.hidden = true;
+  boardEl.append(boxEl);
 
   // Body sizes (for placement, fit, contacts). A size change bounces the
   // blob. Runs after layout, before paint, so the bounce has no flash.
@@ -101,7 +107,9 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     const item = store.item(id);
     if (!el || !item) return null;
     const dragged = drag && drag.id === id && !drag.ghost;
-    const x = dragged ? drag.x : item.x, y = dragged ? drag.y : item.y;
+    const member = drag && drag.group && drag.group.find(g => g.id === id);
+    const x = dragged ? drag.x : member ? drag.x + member.dx : item.x;
+    const y = dragged ? drag.y : member ? drag.y + member.dy : item.y;
     const s = sizeOf(id);
     const v = el._phys.visual();
     return { cx: x + v.tx, cy: y + s.h / 2 + v.ty, a: (s.w / 2) * v.kx, b: (s.h / 2) * v.ky, rd: v.rd };
@@ -154,7 +162,8 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const expanded = ui.expanded[0] === item.id;
       const kids = childrenOf(doc, item.id);
       el._kidCount = kids.length;
-      updateItemEl(el, item, { selected: ui.selectedId === item.id, kids, expanded, container, growth: doc.settings.growth });
+      const selected = ui.selectedId === item.id || ui.selectedIds.includes(item.id);
+      updateItemEl(el, item, { selected, kids, expanded, container, growth: doc.settings.growth });
       allEls.set(item.id, el);
       if (!drag || drag.id !== item.id || drag.ghost) {
         positionEl(el, item.x, item.y);
@@ -187,6 +196,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       els.delete(id);
       sizes.delete(id);
     }
+    boardEl.classList.toggle('multi', ui.selectedIds.length > 1);
     hint.hidden = seen.size > 0;
     hint.textContent = 'Double-tap empty space or press + to add an item';
     links.render();
@@ -257,6 +267,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     drag.x = Math.round(wp.x - drag.grabX);
     drag.y = Math.round(wp.y - drag.grabY);
     positionEl(drag.el, drag.x, drag.y);
+    for (const g of drag.group || []) positionEl(g.el, drag.x + g.dx, drag.y + g.dy);
     updateContacts();
     updateTarget();
   }
@@ -270,6 +281,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     const mine = [];
     for (const [id, el] of els) {
       if (id === drag.id || id === drag.armedId) continue; // armed target swells instead
+      if (drag.groupIds && drag.groupIds.has(id)) continue; // moving along with it
       if (store.ui.expanded.includes(id)) continue;          // an open blob keeps still
       const it = store.item(id);
       if (!it) continue;
@@ -297,7 +309,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const tr = e.closest('.tray');
       if (tr && (!it || !tr.contains(it))) return { kind: 'tray', el: tr };
       if (it) {
-        if (it === drag.el || it.classList.contains('ghosted')) continue;
+        if (it === drag.el || it.classList.contains('ghosted') || it.classList.contains('dragging')) continue;
         return { kind: 'item', id: it.dataset.id, el: it };
       }
       if (e === boardEl) return { kind: 'empty' };
@@ -480,6 +492,22 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const el = els.get(id);
       drag = { ...base, el, ghost: false, size: sizeOf(id), grabX: wp.x - item.x, grabY: wp.y - item.y, x: item.x, y: item.y };
       el.style.zIndex = 1000000;
+      // R24: dragging one of several selected blobs moves them all, keeping
+      // their spacing.
+      if (store.ui.selectedIds.includes(id)) {
+        drag.group = store.ui.selectedIds.filter(x => x !== id && els.has(x) && store.item(x)).map(x => {
+          const it = store.item(x);
+          return { id: x, el: els.get(x), dx: it.x - item.x, dy: it.y - item.y, size: sizeOf(x) };
+        });
+        drag.groupIds = new Set(drag.group.map(g => g.id));
+        for (const g of drag.group) {
+          for (const b of [g.id, ...descendantsOf(doc, g.id)]) banned.add(b);
+          g.el.style.zIndex = 999999;
+          g.el.classList.add('dragging');
+          g.el._phys.pickUp();
+          g.el._phys.pointer(sx, sy, performance.now());
+        }
+      }
     } else {
       // A mini inside a tray: lift a full-size copy ("ghost") out of the tray.
       const miniEl = allEls.get(id);
@@ -499,7 +527,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     boardEl.classList.add('dragging-item');
     drag.el._phys.pickUp();
     drag.el._phys.pointer(sx, sy, performance.now());
-    store.select(id);
+    if (!drag.group) store.select(id);
     rafPan = requestAnimationFrame(autoPanTick);
   }
 
@@ -516,6 +544,10 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     d.el._phys.setContacts([]);
     d.el._phys.drop();
     d.el.classList.remove('dragging');
+    for (const g of d.group || []) {
+      g.el._phys.drop();
+      g.el.classList.remove('dragging');
+    }
     boardEl.classList.remove('dragging-item');
     if (d.ghost) {
       d.el._phys.dispose();
@@ -532,13 +564,53 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   // Blobs on this board pushed aside by an item landing at (x, y): the
   // minimum distance, with a chain reaction. Returns [{ id, x, y }].
   function pushesFor(id, x, y, size) {
-    const list = boardItems().filter(it => it.id !== id).map(it => ellipseOf(it, sizeOf(it.id)));
-    list.push(ellipseOf({ id, x, y }, size));
+    return pushesForMany([{ id, x, y, size }]);
+  }
+
+  // Same for several blobs landing together (R24): they all stay put.
+  function pushesForMany(landed) {
+    const ids = new Set(landed.map(l => l.id));
+    const list = boardItems().filter(it => !ids.has(it.id)).map(it => ellipseOf(it, sizeOf(it.id)));
+    for (const l of landed) list.push(ellipseOf({ id: l.id, x: l.x, y: l.y }, l.size));
     const out = [];
-    for (const [pid, p] of resolveOverlaps(list, id)) {
+    for (const [pid, p] of resolveOverlaps(list, ids)) {
       out.push({ id: pid, x: Math.round(p.cx), y: Math.round(p.cy - sizeOf(pid).h / 2) });
     }
     return out;
+  }
+
+  // Several selected blobs dropped together (R24): into an open grid, into
+  // a held blob, or onto the board (others pushed aside). One undo step.
+  function dropGroup(d) {
+    const doc = store.canvas();
+    const hit = d.hit || { kind: 'outside' };
+    const all = [{ id: d.id, dx: 0, dy: 0, size: d.size }, ...d.group];
+    const into = target => {
+      const kids = childrenOf(doc, target).slice();
+      return all.map(g => {
+        const p = spotInside(kids);
+        kids.push({ x: p.x, y: p.y });
+        return { id: g.id, x: p.x, y: p.y };
+      });
+    };
+    if (d.pane && !d.armedId) {
+      store.reparentItems(into(d.pane.owner), d.pane.owner, { index: d.pane.index });
+      store.select(null);
+    } else if (d.armedId && hit.kind === 'item' && hit.id === d.armedId) {
+      const key = 'drop:' + performance.now();
+      growKey = { id: d.armedId, key };
+      store.reparentItems(into(d.armedId), d.armedId, { coalesce: key });
+      store.select(null);
+    } else if (hit.kind === 'empty' || (hit.kind === 'item' && !(hit.el && hit.el.classList.contains('mini')) && !d.banned.has(hit.id))) {
+      const landed = all.map(g => ({ id: g.id, x: d.x + g.dx, y: d.y + g.dy, size: g.size }));
+      const pushes = pushesForMany(landed);
+      const from = new Map(pushes.map(m => [m.id, { x: store.item(m.id).x, y: store.item(m.id).y }]));
+      store.moveItems([...landed.map(l => ({ id: l.id, x: l.x, y: l.y })), ...pushes], { raise: d.id });
+      render();
+      glide(pushes, from);
+      return;
+    }
+    render();
   }
 
   function glide(pushes, from) {
@@ -550,6 +622,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   }
 
   function drop(d) {
+    if (d.group && d.group.length) { dropGroup(d); return; }
     const doc = store.canvas();
     const item = store.item(d.id);
     const hit = d.hit || { kind: 'outside' };
@@ -635,7 +708,9 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     },
     // Tap selects; tapping the selected item again (or a quick double
     // click) expands it fully, and once more collapses it.
-    tapItem: id => {
+    tapItem: (id, mods = {}) => {
+      // Ctrl/Shift+click adds or removes a board blob from the selection (R24).
+      if (mods.add && els.has(id)) { store.toggleSelected(id); return; }
       const el = elFor(id);
       if (el) el._phys.poke(0.06);
       if (store.ui.selectedId === id) store.toggleExpand(id);
@@ -681,6 +756,26 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       applyView();
     },
     pinchEnd: () => setMoving(false),
+    selectMode: () => selectMode,
+    boxStart: (sx, sy, add) => {
+      boxEl.hidden = false;
+      box = { x0: sx, y0: sy, x1: sx, y1: sy, add, base: add ? store.selectedItems() : [], hits: new Set() };
+      setMoving(true);
+      drawBox();
+    },
+    boxMove: (sx, sy) => {
+      if (!box) return;
+      box.x1 = sx;
+      box.y1 = sy;
+      drawBox();
+    },
+    boxEnd: () => {
+      if (!box) return;
+      const ids = [...new Set([...box.base, ...box.hits])];
+      clearBox();
+      store.selectMany(ids);
+    },
+    boxCancel: () => clearBox(),
     tapEmpty: () => {
       store.select(null);
       store.selectLink(null);
@@ -693,6 +788,34 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       onCreateAt(wp.x, wp.y - NEW_ITEM_SIZE.h / 2);
     }
   });
+
+  // ---- selection box (R24, C13: Select mode) ------------------------------------
+  // Drawn in screen space; every board blob whose outline it touches is
+  // marked while dragging and selected when the finger lifts.
+  function drawBox() {
+    const r = rect();
+    const x = Math.min(box.x0, box.x1) - r.left, y = Math.min(box.y0, box.y1) - r.top;
+    const w = Math.abs(box.x1 - box.x0), h = Math.abs(box.y1 - box.y0);
+    boxEl.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+    boxEl.style.width = w + 'px';
+    boxEl.style.height = h + 'px';
+    const a = screenToWorld(view, x, y), b = screenToWorld(view, x + w, y + h);
+    const wr = { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+    const hits = new Set();
+    if (w > 2 || h > 2) {
+      for (const it of boardItems()) if (ellipseTouchesRect(ellipseOf(it, sizeOf(it.id)), wr)) hits.add(it.id);
+    }
+    for (const [id, el] of els) el.classList.toggle('box-hit', hits.has(id));
+    box.hits = hits;
+  }
+
+  function clearBox() {
+    if (!box) return;
+    box = null;
+    boxEl.hidden = true;
+    for (const el of els.values()) el.classList.remove('box-hit');
+    setMoving(false);
+  }
 
   // Mouse wheel / two-finger scroll pans; Ctrl+wheel and touchpad pinch zoom.
   boardEl.addEventListener('wheel', e => {
@@ -724,6 +847,8 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     render,
     spawn,
     getView: () => ({ ...view }),
+    setSelectMode(on) { selectMode = !!on; boardEl.classList.toggle('select-mode', selectMode); },
+    get selectMode() { return selectMode; },
     setView(v) { view = { ...v }; applyView(); },
 
     zoomBy(factor) {

@@ -26,20 +26,22 @@ export function ellipseContact(A, B, margin = 6) {
   return { ux, uy, s: Math.min(1, overlap / Math.max(1, scale)) };
 }
 
-// After dropping `fixedId`, pushes overlapping blobs out of the way by the
-// smallest amount along the line between centres; anything they then hit is
-// pushed too (chain reaction). The dropped blob never moves. Blobs that
-// weren't involved stay put. Returns Map id -> { cx, cy } of moved blobs.
-export function resolveOverlaps(list, fixedId, gap = 10, maxPushes = 400) {
+// After dropping `fixed` (one id, or several when many blobs are moved
+// together — R24), pushes overlapping blobs out of the way by the smallest
+// amount along the line between centres; anything they then hit is pushed
+// too (chain reaction). Dropped blobs never move. Blobs that weren't
+// involved stay put. Returns Map id -> { cx, cy } of moved blobs.
+export function resolveOverlaps(list, fixed, gap = 10, maxPushes = 400) {
   const byId = new Map(list.map(e => [e.id, { ...e }]));
-  if (!byId.has(fixedId)) return new Map();
+  const fixedIds = new Set(typeof fixed === 'string' ? [fixed] : fixed);
+  const queue = [...fixedIds].filter(id => byId.has(id));
+  if (!queue.length) return new Map();
   const moved = new Set();
-  const queue = [fixedId];
   let pushes = 0;
   while (queue.length && pushes < maxPushes) {
     const A = byId.get(queue.shift());
     for (const B of byId.values()) {
-      if (B.id === A.id || B.id === fixedId) continue;
+      if (B.id === A.id || fixedIds.has(B.id)) continue;
       let dx = B.cx - A.cx, dy = B.cy - A.cy;
       let dist = Math.hypot(dx, dy);
       if (dist < 1e-6) { dx = 0; dy = 1; dist = 1e-6; }
@@ -57,6 +59,15 @@ export function resolveOverlaps(list, fixedId, gap = 10, maxPushes = 400) {
   const out = new Map();
   for (const id of moved) out.set(id, { cx: byId.get(id).cx, cy: byId.get(id).cy });
   return out;
+}
+
+// Does ellipse e touch rectangle r ({ x, y, w, h }, same coordinates)? Used
+// by the selection box: a blob is selected if the box touches its outline.
+export function ellipseTouchesRect(e, r) {
+  const nx = Math.max(r.x, Math.min(e.cx, r.x + r.w));
+  const ny = Math.max(r.y, Math.min(e.cy, r.y + r.h));
+  const dx = (nx - e.cx) / e.a, dy = (ny - e.cy) / e.b;
+  return dx * dx + dy * dy <= 1;
 }
 
 export const NEW_ITEM_SIZE = { w: 140, h: 100 };

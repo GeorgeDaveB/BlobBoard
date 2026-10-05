@@ -10,9 +10,10 @@ export function createStore({ repo, now = () => Date.now() }) {
   const history = new Map(); // canvasId -> { undo: [], redo: [] }
   const events = createEmitter();
   // Screen state (not saved): which items are expanded (a path from the top
-  // level down: one per level, C2) and what is selected (an item or a line,
-  // never both).
-  const ui = { canvasId: null, expanded: [], selectedId: null, selectedLinkId: null };
+  // level down: one per level, C2) and what is selected: one item
+  // (selectedId), several top-level items (selectedIds, 2 or more — R24),
+  // or one line (selectedLinkId) — only one of the three at a time.
+  const ui = { canvasId: null, expanded: [], selectedId: null, selectedIds: [], selectedLinkId: null };
 
   function hist(canvasId) {
     let h = history.get(canvasId);
@@ -59,6 +60,37 @@ export function createStore({ repo, now = () => Date.now() }) {
     ui.expanded = path;
     if (ui.selectedId && !doc.items[ui.selectedId]) ui.selectedId = null;
     if (ui.selectedLinkId && !doc.links[ui.selectedLinkId]) ui.selectedLinkId = null;
+    // Multi-selection: only top-level items that still exist; one left
+    // becomes a normal selection.
+    if (ui.selectedIds.length) {
+      const ok = ui.selectedIds.filter(id => doc.items[id] && doc.items[id].parentId === null);
+      ui.selectedIds = ok.length > 1 ? ok : [];
+      if (ok.length === 1) ui.selectedId = ok[0];
+    }
+  }
+
+  // Puts `id` inside `target` (null = top level) at (x, y); removes its
+  // lines (R23); `index` = slot in the group's grid, else at the end.
+  // Returns false if not allowed (loop) or already there.
+  function moveInside(doc, t, id, target, x, y, index) {
+    const item = doc.items[id];
+    if (!item || !canMoveInto(doc, id, target) || item.parentId === target) return false;
+    for (const [lid, ln] of Object.entries(doc.links)) {
+      if (ln.from === id || ln.to === id) delete doc.links[lid];
+    }
+    const siblings = childrenOf(doc, target).filter(s => s.id !== id);
+    item.parentId = target;
+    if (index != null) {
+      siblings.splice(Math.max(0, Math.min(siblings.length, index)), 0, item);
+      siblings.forEach((s, i) => { if (s.order !== i) { s.order = i; s.updatedAt = t; } });
+    } else {
+      item.order = siblings.length ? siblings[siblings.length - 1].order + 1 : 0;
+    }
+    item.x = Math.round(x);
+    item.y = Math.round(y);
+    item.z = maxZ(doc) + 1;
+    item.updatedAt = t;
+    return true;
   }
 
   function replaceDoc(canvasId, json) {
@@ -80,6 +112,7 @@ export function createStore({ repo, now = () => Date.now() }) {
       ui.canvasId = canvases.has(currentId) ? currentId : (docs[0] && docs[0].id) || null;
       ui.expanded = [];
       ui.selectedId = null;
+      ui.selectedIds = [];
       ui.selectedLinkId = null;
     },
 
@@ -96,18 +129,44 @@ export function createStore({ repo, now = () => Date.now() }) {
 
     select(id) {
       const next = id || null;
-      if (ui.selectedId === next && !ui.selectedLinkId) return;
+      if (ui.selectedId === next && !ui.selectedLinkId && !ui.selectedIds.length) return;
       ui.selectedId = next;
+      ui.selectedIds = [];
       ui.selectedLinkId = null;
       events.emit({ type: 'ui' });
     },
 
     selectLink(id) {
       const next = id || null;
-      if (ui.selectedLinkId === next && !ui.selectedId) return;
+      if (ui.selectedLinkId === next && !ui.selectedId && !ui.selectedIds.length) return;
       ui.selectedLinkId = next;
       ui.selectedId = null;
+      ui.selectedIds = [];
       events.emit({ type: 'ui' });
+    },
+
+    // Several items (R24): top-level ones only. One = normal selection,
+    // none = nothing selected.
+    selectMany(ids) {
+      const doc = canvases.get(ui.canvasId);
+      const ok = [...new Set(ids)].filter(id => doc && doc.items[id] && doc.items[id].parentId === null);
+      if (ok.length < 2) { store.select(ok[0] || null); return; }
+      if (JSON.stringify(ok) === JSON.stringify(ui.selectedIds)) return;
+      ui.selectedIds = ok;
+      ui.selectedId = null;
+      ui.selectedLinkId = null;
+      events.emit({ type: 'ui' });
+    },
+
+    // Ctrl/Shift+click: adds the item to the selection, or takes it out.
+    toggleSelected(id) {
+      const cur = store.selectedItems();
+      store.selectMany(cur.includes(id) ? cur.filter(x => x !== id) : cur.concat(id));
+    },
+
+    // Ids of the selected item(s), [] if none.
+    selectedItems() {
+      return ui.selectedIds.length ? ui.selectedIds.slice() : ui.selectedId ? [ui.selectedId] : [];
     },
 
     setExpanded(path) {
@@ -216,30 +275,50 @@ export function createStore({ repo, now = () => Date.now() }) {
     // same undo step. Refuses loops.
     reparentItem(id, parentId, x, y, opts = {}) {
       return commit(opts.coalesce, (doc, t) => {
-        const item = doc.items[id];
+        if (!moveInside(doc, t, id, parentId || null, x, y, opts.index)) return false;
         const target = parentId || null;
-        if (!item || !canMoveInto(doc, id, target)) return false;
-        if (item.parentId === target) return false;
-        for (const [lid, ln] of Object.entries(doc.links)) {
-          if (ln.from === id || ln.to === id) delete doc.links[lid];
-        }
-        const siblings = childrenOf(doc, target).filter(s => s.id !== id);
-        item.parentId = target;
-        if (opts.index != null) {
-          // Dropped at a specific slot of the group's grid.
-          siblings.splice(Math.max(0, Math.min(siblings.length, opts.index)), 0, item);
-          siblings.forEach((s, i) => { if (s.order !== i) { s.order = i; s.updatedAt = t; } });
-        } else {
-          item.order = siblings.length ? siblings[siblings.length - 1].order + 1 : 0;
-        }
-        item.x = Math.round(x);
-        item.y = Math.round(y);
-        item.z = maxZ(doc) + 1;
-        item.updatedAt = t;
         for (const m of opts.pushes || []) {
           const p = doc.items[m.id];
           if (p && p.parentId === target) { p.x = m.x; p.y = m.y; p.updatedAt = t; }
         }
+      });
+    },
+
+    // Several items into one group (R24), as ONE undo step. moves: [{ id, x,
+    // y }] in drop order; `index` = slot of the first one in the group's
+    // grid (the rest follow it). Items that can't go in (loops) are skipped.
+    reparentItems(moves, parentId, opts = {}) {
+      const target = parentId || null;
+      return commit(opts.coalesce, (doc, t) => {
+        let changed = false;
+        let index = opts.index;
+        for (const m of moves) {
+          if (moveInside(doc, t, m.id, target, m.x, m.y, index)) {
+            changed = true;
+            if (index != null) index++;
+          }
+        }
+        if (!changed) return false;
+      });
+    },
+
+    // Deletes several items (+ everything inside them + their lines) as ONE
+    // undo step (R24).
+    deleteItems(ids, opts = {}) {
+      return commit(opts.coalesce, doc => {
+        const gone = new Set();
+        for (const id of ids) {
+          if (!doc.items[id]) continue;
+          gone.add(id);
+          for (const d of descendantsOf(doc, id)) gone.add(d);
+        }
+        if (!gone.size) return false;
+        for (const g of gone) delete doc.items[g];
+        for (const [lid, ln] of Object.entries(doc.links)) {
+          if (gone.has(ln.from) || gone.has(ln.to)) delete doc.links[lid];
+        }
+        if (gone.has(ui.selectedId)) ui.selectedId = null;
+        ui.selectedIds = ui.selectedIds.filter(id => !gone.has(id));
       });
     },
 

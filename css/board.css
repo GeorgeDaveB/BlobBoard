@@ -31,6 +31,23 @@
   pointer-events: none;
 }
 
+/* ---- multi-select (R24) ---- */
+.board.select-mode { cursor: crosshair; }
+.select-box {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 1.5px dashed var(--ink);
+  border-radius: 10px;
+  background: rgba(43, 42, 40, .06);
+  pointer-events: none;
+  z-index: 5;
+}
+/* Blobs the box touches, before the finger lifts. */
+.item.box-hit > .item-jelly > .item-body { box-shadow: 0 0 0 3px rgba(255, 255, 255, .8), 0 4px 16px rgba(40, 30, 20, .22); }
+/* Several selected: no per-item controls (✎, connect handle). */
+.board.multi .item > .item-ctl { display: none; }
+
 /* ---- lines (gooey strings), under the items ---- */
 .links-layer {
   position: absolute;

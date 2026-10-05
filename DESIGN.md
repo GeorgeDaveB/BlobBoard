@@ -84,7 +84,7 @@ Numbered so the build phases and tests can refer to them.
 - **R31** Line **look and text** (owner, 2026-10-05):
   - **Style:** *Gooey* (the rubber string) or *Straight* (a thin straight arrow that just points at the other blob, no physics).
   - **Colour:** *Gradient* (start blob's colour fading to the end blob's), *Start blob* (the colour of the blob it comes from), *End blob* (the colour of the blob it points to), or *Custom* (8 swatches + picker).
-  - **Thickness:** Thin (0.6×), Normal, Thick (1.6×), Extra thick (2.4×) — scales the line and (a bit less) its arrowheads.
+  - **Thickness:** an adjustable **slider** from 0.3× to 3× the normal width (step 0.1; owner, 2026-10-06) — scales the line and (a bit less) its arrowheads. In the line editor a **Default** chip next to the slider means "follow the canvas"; moving the slider gives the line its own thickness.
   - All three have a **per-canvas default in ⚙** ("Lines"), and **each line can override** them in its own editor ("Default" = follow the canvas). Changing the default **never changes a line that has its own choice** (owner, 2026-10-06).
   - **"Apply to all lines…"** in ⚙ (with a confirmation): clears every line's own style/colour/thickness so all follow the defaults; text is kept; one undo step + Undo toast.
   - **Text on a line:** up to 80 characters, shown exactly at the line's middle in a pill with a white border, filled with the line's colours (gradient left→right as drawn); text colour picked automatically for contrast. Labels sit above blobs, below open trays and a dragged blob.
@@ -212,7 +212,7 @@ Please check these. Each one is easy to change now and harder later.
 | arrowFrom, arrowTo | booleans: arrowhead at the `from` end / at the `to` end |
 | style | `null` (canvas default) · `'goo'` · `'straight'` (R31) |
 | color | `null` (canvas default) · `'gradient'` · `'start'` · `'end'` · `'#rrggbb'` (R31) |
-| width | `null` (canvas default) · thickness multiplier 0.3–3 (UI offers 0.6 / 1 / 1.6 / 2.4) (R31) |
+| width | `null` (canvas default) · thickness multiplier 0.3–3 (slider, step 0.1) (R31) |
 | label | text shown at the middle, max 80 characters, `''` = none (R31) |
 | createdAt, updatedAt | |
 
@@ -446,7 +446,10 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 ---
 
-### 8.7 Multi-select (phase 3b)
+### 8.7 Multi-select (phase 3b) — ✅ built 2026-10-06
+
+*As built:* store `ui.selectedIds` (2+ top-level ids; one item = `selectedId`, as before), actions `selectMany`, `toggleSelected`, `selectedItems`, `reparentItems(moves, parentId, {index, coalesce})`, `deleteItems(ids)`; `layout.resolveOverlaps` takes one id or a set of fixed ids; `layout.ellipseTouchesRect` for the box. The box lives in `board.js` (no separate `selection.js`); the mode button, H/V keys and the "N selected · Delete · ✕" bar live in `app.js`. Dropping a group into an **open grid** also works (at the pointed slot). On a phone there's no Ctrl/Shift, so a new box replaces the selection (PC: Ctrl/Shift at the start of a box adds to it).
+
 
 - **Mode button** (`topBar.js`): ✋ Pan / ⬚ Select, H / V on PC, saved in device settings.
 - **`ui/selection.js`** — the selection box (a dashed, softly tinted rounded rectangle drawn in screen space), hit-testing items against it (an item is selected if the box *touches* its outline, like Windows), and the selected-set in the store's screen state (`ui.selectedIds`). Shows a small bar: "3 selected · Delete · ✕".
@@ -642,7 +645,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 1 Board basics | model, store, device database, pan/zoom, animated blobs, create/edit (title, notes, colour picker, done), move, undo | items survive a reload; tests pass |
 | 2 Groups | drag-hold-into (target swells around the held blob), mini shapes + badge, tap-again full expansion with tray + add tile (nested), container view option (R27), reorder (R28), drag minis out, back stack | R14–R17, R26–R28 checklist passes |
 | 3 Lines ✅ | connect dot, gooey lines, select, + / − arrows, × delete, removal on regrouping; growth pushes neighbours (R30) | R21–R23 pass |
-| 3b Multi-select | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
+| 3b Multi-select ✅ | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
 | 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
 | 5 Tags | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |

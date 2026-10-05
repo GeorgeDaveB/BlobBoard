@@ -320,6 +320,28 @@ html, body {
 .choice small { color: var(--muted); line-height: 1.35; }
 .settings-note { margin: 4px 18px 0; color: var(--muted); font-size: 13px; }
 
+/* Pan / Select mode button: highlighted in Select mode. */
+.mode-btn.on, .mode-btn.on:hover:not(:disabled) { background: var(--ink); color: #fff; border-radius: 10px; }
+.mode-btn svg rect { fill: none; }
+
+/* "N selected · Delete · ✕" bar (R24). */
+.select-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 16px;
+  background: var(--surface);
+  border-radius: 999px;
+  box-shadow: var(--shadow-2);
+  z-index: 25;
+}
+.select-bar[hidden] { display: none; }
+.select-count { font-weight: 600; white-space: nowrap; }
+
 /* Segmented choice chips (line style / colour). */
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
 .seg-btn {
@@ -335,6 +357,10 @@ html, body {
 }
 .seg-btn.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); font-weight: 600; }
 .line-look { display: flex; flex-direction: column; gap: 14px; }
+
+/* Slider with a "Default" chip beside it (line thickness). */
+.range-line { display: flex; align-items: center; gap: 10px; }
+.range-line input[type=range] { flex: 1; height: 32px; accent-color: var(--ink); }
 
 /* Slider field in settings (growth per inside item). */
 .range-field { padding: 10px 18px 4px; display: flex; flex-direction: column; gap: 6px; }

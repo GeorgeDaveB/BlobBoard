@@ -5,8 +5,9 @@ import { isHex } from '../services/color.js';
 
 const STYLES = [['goo', 'Gooey'], ['straight', 'Straight']];
 const COLORS = [['gradient', 'Gradient'], ['start', 'Start blob'], ['end', 'End blob'], ['custom', 'Custom']];
-const WIDTHS = [['0.6', 'Thin'], ['1', 'Normal'], ['1.6', 'Thick'], ['2.4', 'Extra thick']];
-const NAMES = { goo: 'Gooey', straight: 'Straight', gradient: 'Gradient', start: 'Start blob', end: 'End blob', '0.6': 'Thin', '1': 'Normal', '1.6': 'Thick', '2.4': 'Extra thick' };
+const NAMES = { goo: 'Gooey', straight: 'Straight', gradient: 'Gradient', start: 'Start blob', end: 'End blob' };
+const W_MIN = 0.3, W_MAX = 3, W_STEP = 0.1; // thickness slider (× normal width)
+const fmtWidth = w => (Math.round(w * 10) / 10).toFixed(1) + '×';
 
 // onChange(patch): patch = { style } | { color } | { width } (null = default).
 export function createLineLookFields({ withDefault, onChange }) {
@@ -30,20 +31,45 @@ export function createLineLookFields({ withDefault, onChange }) {
   const picker = createColorPicker({ onChange: hex => onChange({ color: hex }) });
   picker.el.hidden = true;
   picker.el.classList.add('line-look-picker');
-  const widthRow = chips('Thickness', withDefault ? [['default', 'Default'], ...WIDTHS] : WIDTHS, v => {
-    onChange({ width: v === 'default' ? null : Number(v) });
-  });
-  el.append(styleRow.wrap, colorRow.wrap, picker.el, widthRow.wrap);
-
-  // The chip closest to a stored thickness (e.g. 1.5 -> '1.6').
-  function nearestWidth(w) {
-    let best = '1', dist = Infinity;
-    for (const [v] of WIDTHS) {
-      const x = Math.abs(Number(v) - (Number(w) || 1));
-      if (x < dist) { dist = x; best = v; }
-    }
-    return best;
+  // Thickness: a slider (0.3×–3× the normal width). In the line editor a
+  // "Default" chip next to it means "follow the canvas"; dragging the
+  // slider gives the line its own thickness.
+  const widthWrap = document.createElement('div');
+  widthWrap.className = 'field';
+  const widthTop = document.createElement('div');
+  widthTop.className = 'range-top';
+  const widthLabel = document.createElement('div');
+  widthLabel.className = 'field-label';
+  widthLabel.textContent = 'Thickness';
+  const widthValue = document.createElement('output');
+  widthValue.className = 'range-value';
+  widthTop.append(widthLabel, widthValue);
+  const widthLine = document.createElement('div');
+  widthLine.className = 'range-line';
+  const widthSlider = document.createElement('input');
+  widthSlider.type = 'range';
+  widthSlider.min = String(W_MIN);
+  widthSlider.max = String(W_MAX);
+  widthSlider.step = String(W_STEP);
+  widthSlider.setAttribute('aria-label', 'Line thickness');
+  widthLine.append(widthSlider);
+  let widthDefault = null;
+  if (withDefault) {
+    widthDefault = document.createElement('button');
+    widthDefault.type = 'button';
+    widthDefault.className = 'seg-btn';
+    widthDefault.textContent = 'Default';
+    widthDefault.addEventListener('click', () => onChange({ width: null }));
+    widthLine.append(widthDefault);
   }
+  widthWrap.append(widthTop, widthLine);
+  widthSlider.addEventListener('input', () => {
+    const w = Number(widthSlider.value);
+    widthValue.textContent = fmtWidth(w);
+    if (widthDefault) widthDefault.classList.remove('on');
+    onChange({ width: w });
+  });
+  el.append(styleRow.wrap, colorRow.wrap, picker.el, widthWrap);
 
   function chips(label, options, pick) {
     const wrap = document.createElement('div');
@@ -84,7 +110,11 @@ export function createLineLookFields({ withDefault, onChange }) {
     // shown on the Default chips.
     set(value, defaults) {
       mark(styleRow, value.style == null ? 'default' : value.style);
-      mark(widthRow, value.width == null ? 'default' : nearestWidth(value.width));
+      // Thickness: the line's own value, or the default (shown, chip on).
+      const w = value.width == null ? (defaults && defaults.width) || 1 : value.width;
+      if (document.activeElement !== widthSlider) widthSlider.value = String(w);
+      widthValue.textContent = fmtWidth(w) + (value.width == null && widthDefault ? ' (default)' : '');
+      if (widthDefault) widthDefault.classList.toggle('on', value.width == null);
       const c = value.color;
       mark(colorRow, isHex(c) || customOpen ? 'custom' : c == null ? 'default' : c);
       if (isHex(c)) { picker.setValue(c); picker.el.hidden = false; }
@@ -93,7 +123,6 @@ export function createLineLookFields({ withDefault, onChange }) {
         const d = (row, v) => { const b = row.buttons.find(x => x.dataset.value === 'default'); if (b) b.textContent = 'Default (' + (isHex(v) ? 'custom' : NAMES[v] || v) + ')'; };
         d(styleRow, defaults.style);
         d(colorRow, defaults.color);
-        d(widthRow, nearestWidth(defaults.width));
       }
     },
     // Fresh start (each time a sheet opens).
