@@ -44,7 +44,7 @@ Rule: **every change lands with (1) code, (2) tests where logic is involved, (3)
 | 8 | Dropbox sync (PKCE, 3-way merge) | planned — owner must create the Dropbox app (DESIGN §16) |
 | 9 | PWA polish (service worker, icons, install) | planned |
 
-Tests: **79 passing** (local + live) as of this update.
+Tests: **82 passing** (local + live) as of this update.
 
 ---
 
@@ -88,6 +88,9 @@ Tests: **79 passing** (local + live) as of this update.
 | 2026-10-05 | Connect handle shows a dot-with-arrow icon; **app version** shown in ⚙ (`js/version.js`, bump on every deploy) | Owner couldn't find the plain dot (or had a cached old build) |
 | 2026-10-05 | **R31 line look + text:** Gooey/Straight style; Gradient/Start/End/Custom colour; per-canvas default in ⚙ + per-line override; label pill at the middle (white border, line colours); line editor (✎ / tap selected line) | Owner request; "parent"/"inherited" colours confirmed as Start/End blob |
 | 2026-10-05 | Connect handle = thin black arrow icon | Owner request |
+| 2026-10-06 | Line **thickness** (Thin/Normal/Thick/Extra thick; canvas default + per line); **"Apply to all lines…"** with confirm (clears per-line choices, keeps text, one undo step); per-line choices survive default changes (test added) | Owner request |
+| 2026-10-06 | **⚙ Settings is a side pane** (same `.sheet` as the editors); settings / item editor / line editor close each other (`app.js`) | Owner request |
+| 2026-10-05/06 | GitHub Pages deploys stuck "queued" (GitHub Actions degraded). Run #20 became a ghost (can't cancel). Owner told to re-run the newest run or toggle Settings → Pages source None → main | Not a code problem; unauthenticated API is 60 calls/h — check the live file instead |
 | 2026-10-05 | **Bug fix:** string folded back into big blobs — resting middle now between the edges, not the centres; swung-in middle falls back | Owner report (screenshot) |
 | 2026-10-05 | C14 (my choices, flagged): ● dot top-left; colour fades between the two blobs; hint on tapping the dot; messages for invalid targets; Undo toast on line delete | Not specified; easy to change |
 

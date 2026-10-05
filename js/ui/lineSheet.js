@@ -1,5 +1,5 @@
 // The line editor (opened with ✎ on a selected line, or by tapping a
-// selected line again): label, style, colour, delete. Bottom sheet on
+// selected line again): label, style, colour, thickness, delete. Bottom sheet on
 // phones, side panel on PC, like the item editor. Changes apply live; one
 // opening = one undo step.
 import { createLineLookFields } from './lineLookFields.js';
@@ -62,7 +62,7 @@ export function createLineSheet({ host, store, onRequestClose, onDelete }) {
     if (!ln) return;
     if (document.activeElement !== label) label.value = ln.label || '';
     const s = store.canvas().settings;
-    look.set({ style: ln.style, color: ln.color }, { style: s.lineStyle, color: s.lineColor });
+    look.set({ style: ln.style, color: ln.color, width: ln.width }, { style: s.lineStyle, color: s.lineColor, width: s.lineWidth });
   }
 
   label.addEventListener('input', () => update({ label: label.value }));

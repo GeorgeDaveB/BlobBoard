@@ -1,9 +1,13 @@
 // ⚙ Settings for the current canvas (saved with the canvas, so they sync):
-// how an expanded item shows what's inside it, and how much a blob grows
-// per item inside it (R30). Also shows the app version.
+// how an expanded item shows what's inside it, how much a blob grows per
+// item inside it (R30), and the default look of lines (R31) with "apply to
+// all lines". Also shows the app version.
+// A side pane like the editors (bottom sheet on phones, right panel on PC);
+// opening any other panel closes it (app.js).
 import { APP_VERSION } from '../version.js';
 import { MAX_GROW } from './itemView.js';
 import { createLineLookFields } from './lineLookFields.js';
+import { confirmDialog, toast } from './dialogs.js';
 
 let sliderSeq = 0;
 const OPTIONS = [
@@ -12,13 +16,10 @@ const OPTIONS = [
 ];
 
 export function createSettingsSheet({ host, store, onRequestClose }) {
-  const back = document.createElement('div');
-  back.className = 'modal-back settings-back';
-  back.hidden = true;
-  const box = document.createElement('section');
-  box.className = 'modal settings';
-  box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', 'Canvas settings');
+  const sheet = document.createElement('section');
+  sheet.className = 'sheet settings-sheet';
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-label', 'Canvas settings');
 
   const head = document.createElement('div');
   head.className = 'sheet-head';
@@ -30,6 +31,9 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
   done.className = 'btn btn-primary';
   done.textContent = 'Done';
   head.append(h, done);
+
+  const body = document.createElement('div');
+  body.className = 'sheet-body';
 
   const group = document.createElement('fieldset');
   group.className = 'choice-group';
@@ -55,6 +59,7 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
     group.append(label);
     return input;
   });
+
   // Growth per inside item: 0 (never grows) … 3 blobs' worth of area each.
   const grow = document.createElement('div');
   grow.className = 'range-field';
@@ -89,28 +94,51 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
   });
   slider.addEventListener('change', () => { sliderKey = null; });
 
-  // Default look of lines on this canvas (each line can override it).
+  // Default look of lines on this canvas. Lines with their own choice keep
+  // it; "Apply to all lines" resets them to follow these defaults.
   const linesTitle = document.createElement('div');
   linesTitle.className = 'field-label settings-section';
-  linesTitle.textContent = 'Lines (default for this canvas)';
+  linesTitle.textContent = 'Lines — default for this canvas';
+  const linesHint = document.createElement('small');
+  linesHint.className = 'range-hint';
+  linesHint.textContent = 'Lines where you picked their own style, colour or thickness keep it.';
+  const KEYS = { style: 'lineStyle', color: 'lineColor', width: 'lineWidth' };
   const lineLook = createLineLookFields({
     withDefault: false,
     onChange: patch => {
-      if ('style' in patch) store.setCanvasSetting('lineStyle', patch.style);
-      if ('color' in patch) store.setCanvasSetting('lineColor', patch.color, { coalesce: 'lineColor:' + sliderSeq });
+      for (const k of Object.keys(patch)) {
+        if (KEYS[k]) store.setCanvasSetting(KEYS[k], patch[k], { coalesce: 'line:' + k + ':' + sliderSeq });
+      }
     }
+  });
+  const applyAll = document.createElement('button');
+  applyAll.type = 'button';
+  applyAll.className = 'btn btn-wide';
+  applyAll.textContent = 'Apply to all lines…';
+  applyAll.addEventListener('click', async () => {
+    const doc = store.canvas();
+    const n = Object.keys(doc.links).length;
+    if (!n) { toast('There are no lines on this canvas yet'); return; }
+    const ok = await confirmDialog({
+      title: 'Apply to all lines?',
+      message: 'All ' + n + ' line' + (n === 1 ? '' : 's') + ' on this canvas will use these defaults (style, colour, thickness). Their own choices are cleared; their text stays. You can undo this.',
+      okLabel: 'Apply'
+    });
+    if (!ok) return;
+    const changed = store.resetLineLooks();
+    toast(changed ? 'Applied to ' + changed + ' line' + (changed === 1 ? '' : 's') : 'All lines already use the defaults',
+      changed ? { actionLabel: 'Undo', onAction: () => store.undo() } : {});
   });
 
   const note = document.createElement('p');
   note.className = 'settings-note';
   note.textContent = 'Saved with this canvas. · Version ' + APP_VERSION;
 
-  box.append(head, group, grow, linesTitle, lineLook.el, note);
-  back.append(box);
-  host.append(back);
+  body.append(group, grow, linesTitle, linesHint, lineLook.el, applyAll, note);
+  sheet.append(head, body);
+  host.append(sheet);
 
   done.addEventListener('click', () => onRequestClose());
-  back.addEventListener('click', e => { if (e.target === back) onRequestClose(); });
 
   // Shows the canvas's current values (also after undo/redo while open).
   function sync() {
@@ -119,18 +147,19 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
     for (const r of radios) r.checked = doc.settings.insideView === r.value;
     if (document.activeElement !== slider || !sliderKey) slider.value = String(doc.settings.growth);
     showGrow(doc.settings.growth);
-    lineLook.set({ style: doc.settings.lineStyle, color: doc.settings.lineColor });
+    lineLook.set({ style: doc.settings.lineStyle, color: doc.settings.lineColor, width: doc.settings.lineWidth });
   }
-  store.on(() => { if (!back.hidden) sync(); });
+  store.on(() => { if (sheet.classList.contains('open')) sync(); });
 
   return {
-    get isOpen() { return !back.hidden; },
+    el: sheet,
+    get isOpen() { return sheet.classList.contains('open'); },
     open() {
       sliderSeq++;
       lineLook.reset();
       sync();
-      back.hidden = false;
+      sheet.classList.add('open');
     },
-    close() { back.hidden = true; }
+    close() { sheet.classList.remove('open'); }
   };
 }

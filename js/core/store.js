@@ -290,6 +290,20 @@ export function createStore({ repo, now = () => Date.now() }) {
       });
     },
 
+    // "Apply to all lines": every line follows the canvas defaults again
+    // (its own style / colour / thickness cleared; text kept). One undo
+    // step. Returns how many lines changed.
+    resetLineLooks() {
+      let n = 0;
+      commit(null, (doc, t) => {
+        for (const ln of Object.values(doc.links)) {
+          if (applyLinkPatch(ln, { style: null, color: null, width: null })) { ln.updatedAt = t; n++; }
+        }
+        if (!n) return false;
+      });
+      return n;
+    },
+
     deleteLink(linkId) {
       return commit(null, doc => {
         if (!doc.links[linkId]) return false;

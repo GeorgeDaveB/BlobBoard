@@ -98,9 +98,11 @@ export function midWidth(len) {
 //   spine  — centre curve (for the wide invisible tap target)
 //   at(t)  — point on the centre curve, t = 0 at A's edge … 1 at B's edge
 //   len    — edge-to-edge length
-export function strandGeometry(A, B, mid, arrows = {}, style = 'goo') {
+export function strandGeometry(A, B, mid, arrows = {}, style = 'goo', width = 1) {
   const S = STRAND;
   const straight = style === 'straight';
+  const kw = width > 0 ? width : 1;     // thickness multiplier
+  const ka = 1 + (kw - 1) * 0.6;        // arrowheads grow a bit less
   const { ea, eb } = edges(A, B);
   const len = Math.hypot(eb.x - ea.x, eb.y - ea.y);
   // Edges crossing (blobs overlapping): nothing sensible to draw.
@@ -114,12 +116,12 @@ export function strandGeometry(A, B, mid, arrows = {}, style = 'goo') {
     : inside(A, mid) || inside(B, mid) ? restMid(A, B) : mid;
   const c = { x: 2 * m.x - (ea.x + eb.x) / 2, y: 2 * m.y - (ea.y + eb.y) / 2 };
 
-  const wEnd = straight ? S.straightWidth : Math.min(S.endWidth, Math.max(6, len * 0.25));
-  const wMid = straight ? S.straightWidth : Math.min(midWidth(len), wEnd);
+  const wEnd = kw * (straight ? S.straightWidth : Math.min(S.endWidth, Math.max(6, len * 0.25)));
+  const wMid = straight ? wEnd : Math.min(kw * midWidth(len), wEnd);
   const dirA = unit({ x: ea.x - c.x, y: ea.y - c.y }); // pointing into A
   const dirB = unit({ x: eb.x - c.x, y: eb.y - c.y }); // pointing into B
-  const arrowLen = Math.min(straight ? S.straightArrowLen : S.arrowLen, len * 0.35);
-  const arrowHalf = straight ? S.straightArrowHalf : Math.max(S.arrowHalf, wEnd * 0.6);
+  const arrowLen = Math.min(ka * (straight ? S.straightArrowLen : S.arrowLen), len * 0.35);
+  const arrowHalf = Math.max(ka * (straight ? S.straightArrowHalf : S.arrowHalf), wEnd * 0.6 + 1);
   const inset = straight ? 0 : S.inset;
 
   // Line ends: tucked under the blob, or at the back of an arrowhead.

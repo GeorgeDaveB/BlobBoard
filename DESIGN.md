@@ -84,7 +84,9 @@ Numbered so the build phases and tests can refer to them.
 - **R31** Line **look and text** (owner, 2026-10-05):
   - **Style:** *Gooey* (the rubber string) or *Straight* (a thin straight arrow that just points at the other blob, no physics).
   - **Colour:** *Gradient* (start blob's colour fading to the end blob's), *Start blob* (the colour of the blob it comes from), *End blob* (the colour of the blob it points to), or *Custom* (8 swatches + picker).
-  - Both have a **per-canvas default in ⚙** ("Lines"), and **each line can override** them in its own editor ("Default" = follow the canvas).
+  - **Thickness:** Thin (0.6×), Normal, Thick (1.6×), Extra thick (2.4×) — scales the line and (a bit less) its arrowheads.
+  - All three have a **per-canvas default in ⚙** ("Lines"), and **each line can override** them in its own editor ("Default" = follow the canvas). Changing the default **never changes a line that has its own choice** (owner, 2026-10-06).
+  - **"Apply to all lines…"** in ⚙ (with a confirmation): clears every line's own style/colour/thickness so all follow the defaults; text is kept; one undo step + Undo toast.
   - **Text on a line:** up to 80 characters, shown exactly at the line's middle in a pill with a white border, filled with the line's colours (gradient left→right as drawn); text colour picked automatically for contrast. Labels sit above blobs, below open trays and a dragged blob.
   - **Line editor:** tap a line to select it (+ / − at the ends, ✎ and × beside the middle); tap the selected line (or its label) again, or ✎, to open it: text, style, colour, Delete. One opening = one undo step.
 
@@ -210,10 +212,11 @@ Please check these. Each one is easy to change now and harder later.
 | arrowFrom, arrowTo | booleans: arrowhead at the `from` end / at the `to` end |
 | style | `null` (canvas default) · `'goo'` · `'straight'` (R31) |
 | color | `null` (canvas default) · `'gradient'` · `'start'` · `'end'` · `'#rrggbb'` (R31) |
+| width | `null` (canvas default) · thickness multiplier 0.3–3 (UI offers 0.6 / 1 / 1.6 / 2.4) (R31) |
 | label | text shown at the middle, max 80 characters, `''` = none (R31) |
 | createdAt, updatedAt | |
 
-Only one link per pair of items. Canvas `settings` also hold `lineStyle` ('goo') and `lineColor` ('gradient'), the defaults for lines whose `style`/`color` is `null`.
+Only one link per pair of items. Canvas `settings` also hold `lineStyle` ('goo'), `lineColor` ('gradient') and `lineWidth` (1), the defaults for lines whose `style`/`color` is `null`.
 
 ### 6.4 Shared across all canvases
 
@@ -431,7 +434,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 **`ui/canvasMenu.js`** — the canvas actions (R3, R4). Export file: `Life.blobboard.json`. Export picture: `Life-Health-2026-10-05.png`. On Android also offers **Share** (straight to Drive, mail, etc.). Import always creates a **new** canvas with fresh ids, so importing twice on one device can't clash; tags are matched by name; pictures dedupe by fingerprint.
 
-**`ui/settingsSheet.js`** — *(as built: per-canvas "Show inside items: Tray / Inside the blob" (R27), "Growth per inside item" slider (R30), app version (`js/version.js`); the rest arrives in later phases)* — Dropbox connect/disconnect + last sync time; motion (Full / Calm / Off, following the device's "reduce motion" setting by default); tag manager; picture library; app version + "Check for update".
+**`ui/settingsSheet.js`** — a **side pane** like the editors (bottom sheet on phones, right panel on PC), not a pop-up; opening the item editor or line editor closes it and vice versa (owner, 2026-10-06). *(as built: line defaults + "Apply to all lines" (R31), per-canvas "Show inside items: Tray / Inside the blob" (R27), "Growth per inside item" slider (R30), app version (`js/version.js`); the rest arrives in later phases)* — Dropbox connect/disconnect + last sync time; motion (Full / Calm / Off, following the device's "reduce motion" setting by default); tag manager; picture library; app version + "Check for update".
 
 **`ui/dialogs.js`** — confirm, rename prompt, toast messages, an "Undo" toast after deletes.
 

@@ -123,6 +123,7 @@ export function mountApp({ root, store, repo }) {
   function openLineEditor(id) {
     if (!store.link(id)) return;
     if (editor.isOpen) closeLayer(editorLayer);
+    if (settings.isOpen) closeLayer(settingsLayer);
     store.selectLink(id);
     if (lineSheet.isOpen && lineSheet.linkId === id) return;
     lineSheet.close();
@@ -139,8 +140,11 @@ export function mountApp({ root, store, repo }) {
 
   const settings = createSettingsSheet({ host: root, store, onRequestClose: () => closeLayer(settingsLayer) });
   let settingsLayer = 0;
+  // Side panels (settings, item editor, line editor) replace each other.
   function openSettings() {
     if (settings.isOpen) return;
+    if (editor.isOpen) closeLayer(editorLayer);
+    if (lineSheet.isOpen) closeLayer(lineLayer);
     settings.open();
     settingsLayer = openLayer(() => { settingsLayer = 0; settings.close(); });
   }
@@ -152,6 +156,7 @@ export function mountApp({ root, store, repo }) {
   function openEditor(id, opts = {}) {
     if (!store.item(id)) return;
     if (lineSheet.isOpen) closeLayer(lineLayer);
+    if (settings.isOpen) closeLayer(settingsLayer);
     if (opts.expand && store.canvas().settings.insideView === 'container') store.expandTo(id);
     if (editor.isOpen && editor.itemId === id) return;
     if (editor.isOpen) editor.close();

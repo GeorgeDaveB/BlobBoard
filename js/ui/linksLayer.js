@@ -109,6 +109,7 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
       const v = views.get(ln.id) || views.set(ln.id, makeView(ln.id)).get(ln.id);
       const look = lineLook(ln, doc.settings, color(ln.from), color(ln.to));
       if (v.style !== look.style) { v.style = look.style; v.mid = null; }
+      v.width = look.width;
       v.g.classList.toggle('straight', look.style === 'straight');
       const colorKey = look.c0 + look.c1;
       if (v.colorKey !== colorKey) {
@@ -172,7 +173,7 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
       const A = ln && geom(ln.from), B = ln && geom(ln.to);
       if (!A || !B) continue;
       stepMid(v, A, B);
-      const s = strandGeometry(A, B, v.mid, { from: ln.arrowFrom, to: ln.arrowTo }, v.style);
+      const s = strandGeometry(A, B, v.mid, { from: ln.arrowFrom, to: ln.arrowTo }, v.style, v.width);
       const d = s ? s.d + '|' + s.arrows : '';
       if (d !== v.d) {
         v.goo.setAttribute('d', s ? s.d : '');
@@ -250,7 +251,7 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
     tip.setAttribute('fill', look.c0);
     g.append(goo, heads, tip);
     svg.append(g);
-    temp = { fromId, g, goo, heads, tip, x: 0, y: 0, targetId: null, ok: false, mid: null, style: look.style };
+    temp = { fromId, g, goo, heads, tip, x: 0, y: 0, targetId: null, ok: false, mid: null, style: look.style, width: look.width };
   }
 
   function moveTemp(x, y, targetId, ok) {
@@ -269,7 +270,7 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
     const T = temp.targetId && temp.ok ? geom(temp.targetId) : null;
     const B = T || { cx: temp.x, cy: temp.y, a: 0, b: 0 };
     stepMid(temp, A, B);
-    const s = strandGeometry(A, B, temp.mid, { to: !!T }, temp.style);
+    const s = strandGeometry(A, B, temp.mid, { to: !!T }, temp.style, temp.width);
     temp.goo.setAttribute('d', s ? s.d : '');
     temp.heads.setAttribute('d', s ? s.arrows : '');
     temp.tip.setAttribute('cx', temp.x);

@@ -94,10 +94,45 @@ export const tests = {
 
   'link look: line overrides the canvas default; colours resolve from the blobs': () => {
     const set = { lineStyle: 'straight', lineColor: 'start' };
-    assertEqual(lineLook({ style: null, color: null }, set, '#aa0000', '#00bb00'), { style: 'straight', c0: '#aa0000', c1: '#aa0000' });
-    assertEqual(lineLook({ style: 'goo', color: 'end' }, set, '#aa0000', '#00bb00'), { style: 'goo', c0: '#00bb00', c1: '#00bb00' });
-    assertEqual(lineLook({ color: 'gradient' }, set, '#aa0000', '#00bb00'), { style: 'straight', c0: '#aa0000', c1: '#00bb00' });
-    assertEqual(lineLook({ color: '#123456' }, {}, '#aa0000', '#00bb00'), { style: 'goo', c0: '#123456', c1: '#123456' });
+    assertEqual(lineLook({ style: null, color: null }, set, '#aa0000', '#00bb00'), { style: 'straight', width: 1, c0: '#aa0000', c1: '#aa0000' });
+    assertEqual(lineLook({ style: 'goo', color: 'end' }, set, '#aa0000', '#00bb00'), { style: 'goo', width: 1, c0: '#00bb00', c1: '#00bb00' });
+    assertEqual(lineLook({ color: 'gradient' }, set, '#aa0000', '#00bb00'), { style: 'straight', width: 1, c0: '#aa0000', c1: '#00bb00' });
+    assertEqual(lineLook({ color: '#123456', width: 1.6 }, {}, '#aa0000', '#00bb00'), { style: 'goo', width: 1.6, c0: '#123456', c1: '#123456' });
+  },
+
+  'link look: a line with its own choice keeps it when the canvas default changes': () => {
+    const { store, a, b } = setup();
+    const own = store.createLink(a, b);
+    const c = store.createItem({ x: 600, y: 0 });
+    const follows = store.createLink(b, c);
+    store.updateLink(own, { style: 'goo', color: '#123456', width: 0.6 });
+    store.setCanvasSetting('lineStyle', 'straight');
+    store.setCanvasSetting('lineColor', 'end');
+    store.setCanvasSetting('lineWidth', 2.4);
+    const s = store.canvas().settings;
+    assertEqual(lineLook(store.link(own), s, '#aa0000', '#00bb00'), { style: 'goo', width: 0.6, c0: '#123456', c1: '#123456' });
+    assertEqual(lineLook(store.link(follows), s, '#aa0000', '#00bb00'), { style: 'straight', width: 2.4, c0: '#00bb00', c1: '#00bb00' });
+  },
+
+  'link look: apply to all lines clears every line\'s own choice (text kept), one undo step': () => {
+    const { store, a, b } = setup();
+    const id = store.createLink(a, b);
+    store.updateLink(id, { style: 'straight', color: 'end', width: 2.4, label: 'keep me' });
+    assertEqual(store.resetLineLooks(), 1);
+    const ln = store.link(id);
+    assertEqual([ln.style, ln.color, ln.width, ln.label], [null, null, null, 'keep me']);
+    assertEqual(store.resetLineLooks(), 0, 'nothing left to change, no undo step');
+    store.undo();
+    assertEqual([store.link(id).style, store.link(id).width], ['straight', 2.4]);
+  },
+
+  'strand: thickness scales the line and its arrowheads': () => {
+    const A = blob(0, 0), B = blob(400, 0), m = restMid(A, B);
+    const thin = strandGeometry(A, B, m, { to: true }, 'goo', 0.6);
+    const thick = strandGeometry(A, B, m, { to: true }, 'goo', 2.4);
+    assert(thick.wMid > thin.wMid * 3, 'middle width scales');
+    const st = strandGeometry(A, B, m, {}, 'straight', 2);
+    assertEqual(st.wMid, STRAND.straightWidth * 2);
   },
 
   'link edit: style/colour/label change in one undo step per session; bad values ignored': () => {
@@ -106,7 +141,7 @@ export const tests = {
     store.updateLink(id, { label: 'blocks' }, { coalesce: 's1' });
     store.updateLink(id, { style: 'straight' }, { coalesce: 's1' });
     store.updateLink(id, { color: '#ff0000' }, { coalesce: 's1' });
-    store.updateLink(id, { color: 'purple', style: 'wavy' }, { coalesce: 's1' });
+    store.updateLink(id, { color: 'purple', style: 'wavy', width: 99 }, { coalesce: 's1' });
     const ln = store.link(id);
     assertEqual([ln.label, ln.style, ln.color], ['blocks', 'straight', '#ff0000']);
     store.undo();

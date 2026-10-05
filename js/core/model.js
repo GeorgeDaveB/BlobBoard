@@ -10,7 +10,7 @@ export function newCanvas(name, now = Date.now()) {
     schema: SCHEMA,
     id: 'c-' + uuid(),
     name: (name || 'My first canvas').slice(0, LIMITS.name),
-    settings: { thumbnails: true, insideView: 'tray', growth: 1, lineStyle: 'goo', lineColor: 'gradient' },
+    settings: { thumbnails: true, insideView: 'tray', growth: 1, lineStyle: 'goo', lineColor: 'gradient', lineWidth: 1 },
     createdAt: now,
     updatedAt: now,
     items: {},
@@ -128,32 +128,38 @@ export const LINE_STYLES = ['goo', 'straight'];
 export const LINE_COLORS = ['gradient', 'start', 'end'];
 const okStyle = v => LINE_STYLES.includes(v);
 const okColor = v => LINE_COLORS.includes(v) || isHex(v);
+// Thickness: a multiplier of the normal width (0.6 thin … 2.4 extra thick).
+export const LINE_WIDTH = { min: 0.3, max: 3 };
+const okWidth = v => typeof v === 'number' && isFinite(v) && v >= LINE_WIDTH.min && v <= LINE_WIDTH.max;
 
 // A new line from `from` to `to`, with an arrowhead at the `to` end; look
 // follows the canvas default; no label.
 export function newLink(from, to, now = Date.now()) {
-  return { id: 'l-' + uuid(), from, to, arrowFrom: false, arrowTo: true, style: null, color: null, label: '', createdAt: now, updatedAt: now };
+  return { id: 'l-' + uuid(), from, to, arrowFrom: false, arrowTo: true, style: null, color: null, width: null, label: '', createdAt: now, updatedAt: now };
 }
 
-// Applies known line fields (style, color, label); returns true if changed.
+// Applies known line fields (style, color, width, label); returns true if changed.
 export function applyLinkPatch(link, patch) {
   let changed = false;
   const set = (k, v) => { if (link[k] !== v) { link[k] = v; changed = true; } };
   if ('style' in patch && (patch.style === null || okStyle(patch.style))) set('style', patch.style);
   if ('color' in patch && (patch.color === null || okColor(patch.color))) set('color', patch.color);
+  if ('width' in patch && (patch.width === null || okWidth(patch.width))) set('width', patch.width);
   if ('label' in patch) set('label', String(patch.label).slice(0, LIMITS.label));
   return changed;
 }
 
-// What a line actually looks like: { style, c0, c1 } (colour at the start
-// and end; equal for a single colour).
+// What a line actually looks like: { style, width, c0, c1 } (colour at the
+// start and end; equal for a single colour). A line's own choice wins over
+// the canvas default.
 export function lineLook(link, settings, fromColor, toColor) {
   const style = okStyle(link.style) ? link.style : okStyle(settings.lineStyle) ? settings.lineStyle : 'goo';
+  const width = okWidth(link.width) ? link.width : okWidth(settings.lineWidth) ? settings.lineWidth : 1;
   const color = okColor(link.color) ? link.color : okColor(settings.lineColor) ? settings.lineColor : 'gradient';
-  if (color === 'start') return { style, c0: fromColor, c1: fromColor };
-  if (color === 'end') return { style, c0: toColor, c1: toColor };
-  if (color === 'gradient') return { style, c0: fromColor, c1: toColor };
-  return { style, c0: color, c1: color };
+  if (color === 'start') return { style, width, c0: fromColor, c1: fromColor };
+  if (color === 'end') return { style, width, c0: toColor, c1: toColor };
+  if (color === 'gradient') return { style, width, c0: fromColor, c1: toColor };
+  return { style, width, c0: color, c1: color };
 }
 
 // The line joining a and b (either direction), or null.
@@ -205,6 +211,7 @@ export function sanitizeCanvas(doc) {
   // Default look of lines on this canvas.
   if (!okStyle(doc.settings.lineStyle)) doc.settings.lineStyle = 'goo';
   if (!okColor(doc.settings.lineColor)) doc.settings.lineColor = 'gradient';
+  if (!okWidth(doc.settings.lineWidth)) doc.settings.lineWidth = 1;
   doc.createdAt = num(doc.createdAt, now);
   doc.updatedAt = num(doc.updatedAt, now);
   if (!doc.items || typeof doc.items !== 'object') doc.items = {};
@@ -268,6 +275,7 @@ export function sanitizeCanvas(doc) {
     ln.arrowTo = ln.arrowTo === true;
     ln.style = okStyle(ln.style) ? ln.style : null;
     ln.color = okColor(ln.color) ? ln.color : null;
+    ln.width = okWidth(ln.width) ? ln.width : null;
     ln.label = str(ln.label, LIMITS.label);
     ln.createdAt = num(ln.createdAt, now);
     ln.updatedAt = num(ln.updatedAt, now);
