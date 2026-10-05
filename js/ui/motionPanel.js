@@ -7,6 +7,7 @@ export const EFFECTS = [
   { key: 'wobble', label: 'Idle wobble', hint: 'Outlines slowly change shape. The heaviest effect.' },
   { key: 'bob', label: 'Floating', hint: 'Blobs gently bob up and down.' },
   { key: 'lines', label: 'Gooey line wobble', hint: 'Lines lag, bend and wobble when blobs move.' },
+  { key: 'drawGoo', label: 'Gooey line preview', hint: 'While drawing a line it is a gooey string and blobs bounce (off: a thin straight line, no bounce).' },
   { key: 'drag', label: 'Drag feel', hint: 'Squeeze, flatten and lift while dragging.' },
   { key: 'contact', label: 'Touching blobs', hint: 'Edges flatten where a dragged blob touches another.' },
   { key: 'bounce', label: 'Bounces', hint: 'Splat on drop, wobble on tap, bouncy size changes.' },
@@ -21,7 +22,7 @@ const all = v => Object.fromEntries(MOTION_KEYS.map(k => [k, v]));
 export const PRESETS = {
   full: all(true),
   // Phones start here: the continuous effects off, the feel of touch kept.
-  light: { ...all(true), wobble: false, bob: false, lines: false },
+  light: { ...all(true), wobble: false, bob: false, lines: false, drawGoo: false },
   off: all(false)
 };
 

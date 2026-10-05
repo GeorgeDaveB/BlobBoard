@@ -226,7 +226,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     const el = id && els.get(id);
     if (el) {
       el.classList.add('link-target');
-      el._phys.poke(-0.05);
+      if (MOTION.drawGoo) el._phys.poke(-0.05);
       if (navigator.vibrate) navigator.vibrate(10);
     }
   }
@@ -684,7 +684,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       if (!els.has(id)) return;
       linking = { from: id, targetId: null, problem: '', sx, sy };
       boardEl.classList.add('linking');
-      els.get(id)._phys.poke(0.05);
+      if (MOTION.drawGoo) els.get(id)._phys.poke(0.05);
       links.startTemp(id);
       linkMove(sx, sy);
     },
@@ -695,7 +695,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const l = linkStop();
       if (l.targetId) {
         if (store.createLink(l.from, l.targetId)) {
-          for (const id of [l.from, l.targetId]) { const el = els.get(id); if (el) el._phys.poke(0.07); }
+          if (MOTION.drawGoo) for (const id of [l.from, l.targetId]) { const el = els.get(id); if (el) el._phys.poke(0.07); }
         }
       } else if (LINK_PROBLEMS[l.problem]) {
         toast(LINK_PROBLEMS[l.problem]);

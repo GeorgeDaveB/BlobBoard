@@ -249,6 +249,8 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
     endTemp();
     const doc = store.canvas();
     const look = lineLook({}, doc.settings, color(fromId), color(fromId));
+    // Light: a thin straight preview with no physics (⚙ Motion).
+    if (!MOTION.drawGoo) { look.style = 'straight'; look.width = 1; }
     const g = document.createElementNS(NS, 'g');
     g.setAttribute('class', 'link temp');
     const goo = document.createElementNS(NS, 'path');

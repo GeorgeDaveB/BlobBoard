@@ -48,6 +48,7 @@ export const MOTION = {
   morph: true,    // blob <-> card roundness change animates
   swell: true,    // a held-over target puffs up
   lines: true,    // gooey lines lag and wobble (linksLayer.js)
+  drawGoo: true,  // the line you draw from the handle is gooey + bouncy (off: thin straight preview)
   ui: true        // tray slide-in, inside items popping in, reorder slide
 };
 export const MOTION_KEYS = Object.keys(MOTION);

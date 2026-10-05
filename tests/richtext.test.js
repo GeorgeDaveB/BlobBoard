@@ -63,7 +63,7 @@ export const tests = {
   },
 
   'motion: presets — Light switches off only the continuous effects': () => {
-    assertEqual(MOTION_KEYS.filter(k => !PRESETS.light[k]).sort(), ['bob', 'lines', 'wobble']);
+    assertEqual(MOTION_KEYS.filter(k => !PRESETS.light[k]).sort(), ['bob', 'drawGoo', 'lines', 'wobble']);
     assert(MOTION_KEYS.every(k => PRESETS.full[k] && !PRESETS.off[k]));
   }
 };

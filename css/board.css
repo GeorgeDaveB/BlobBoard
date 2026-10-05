@@ -67,6 +67,19 @@
   vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 2px 4px rgba(40, 30, 20, .25));
 }
+/* Hover (mouse): the line lights up so you can see it's clickable. */
+@media (hover: hover) {
+  .link:not(.temp):not(.selected):hover > .link-goo,
+  .link:not(.temp):not(.selected):hover > .link-heads {
+    stroke: rgba(255, 255, 255, .9);
+    stroke-width: 2px;
+    paint-order: stroke;
+    vector-effect: non-scaling-stroke;
+    filter: brightness(1.06) drop-shadow(0 1px 4px rgba(40, 30, 20, .35));
+  }
+  .link-label:hover { box-shadow: 0 0 0 2px rgba(40, 30, 20, .3), 0 2px 8px rgba(40, 30, 20, .25); }
+}
+
 /* Wide invisible copy of the centre line: easy to tap on a phone. */
 .link-hit {
   fill: none;

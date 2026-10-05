@@ -375,6 +375,12 @@
   .item-edit { right: -10px; }
 }
 .item.mini > .item-ctl { zoom: 1.5; }
+/* Hover (mouse): the ✎ and ↗ buttons stand out so they read as clickable. */
+@media (hover: hover) {
+  .item-ctl:hover { background: #f1ede6; box-shadow: 0 0 0 2px var(--ink), var(--shadow-1); }
+  .item-edit:hover { cursor: pointer; }
+  .item-link:hover { cursor: crosshair; }
+}
 .item.dragging > .item-ctl, .item.ghost > .item-ctl { opacity: 0; }
 
 /* ---- connect handle (thin arrow), top-left (R21) ----
