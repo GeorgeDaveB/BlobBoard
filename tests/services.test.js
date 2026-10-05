@@ -1,6 +1,7 @@
 import { assert, assertEqual } from './runner.js';
 import { PALETTE, normalizeHex, hexToHsv, hsvToHex, textColorFor, contrast, DARK_TEXT, LIGHT_TEXT } from '../js/services/color.js';
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, rectsOverlap, MAX_ZOOM } from '../js/services/geometry.js';
+import { growFactor, MAX_GROW } from '../js/ui/itemView.js';
 import { findFreeSpot, ellipseContact, resolveOverlaps, support, spotInside } from '../js/services/layout.js';
 
 const circle = (id, cx, cy, r = 50) => ({ id, cx, cy, a: r, b: r });
@@ -70,6 +71,14 @@ export const tests = {
     assertEqual(spotInside([]), { x: 0, y: 0 });
     const p = spotInside([{ x: 0, y: 0 }, { x: 200, y: 0 }]);
     assert(p.x > 200, 'to the right of the last one');
+  },
+
+  'growth: each inside item adds one blob of area (sqrt), capped at 3x': () => {
+    assertEqual(growFactor(0), 1);
+    assert(near(growFactor(1), Math.SQRT2), '1 inside -> ~1.41x');
+    assert(near(growFactor(3), 2), '3 inside -> 2x');
+    assertEqual(growFactor(8), MAX_GROW);
+    assertEqual(growFactor(50), MAX_GROW, 'capped');
   },
 
   'contact: none when apart, direction + strength when overlapping': () => {

@@ -1,6 +1,6 @@
 # BlobBoard
 
-A board-style life and task tracker: animated blobs you can group, connect and tag. It installs as an app on Windows and Android (PWA) and syncs through Dropbox. The full spec is in [DESIGN.md](DESIGN.md).
+A board-style life and task tracker: animated blobs you can group, connect and tag. It installs as an app on Windows and Android (PWA); Dropbox sync is planned. **Start with [HANDOVER.md](HANDOVER.md)** (status, decisions, how it works); the full spec is in [DESIGN.md](DESIGN.md).
 
 Live: https://georgedaveb.github.io/BlobBoard/
 

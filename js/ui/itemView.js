@@ -178,12 +178,24 @@ export function updateItemEl(el, item, ctx) {
     el._kidSig = kidSig;
   }
 
+  // R30: a closed blob on the board grows as if its inside items had merged
+  // into it: each adds one default blob's area, so size x sqrt(1 + n), max 3x.
+  // Minis keep their grid cell size; open blobs size to their content.
+  const grow = el.classList.contains('mini') || ctx.expanded ? 1 : growFactor(kids.length);
+  p.body.style.setProperty('--grow', grow);
+
   el.classList.toggle('group', kids.length > 0);
   el.classList.toggle('expanded', !!ctx.expanded);
   el.classList.toggle('selected', !!ctx.selected);
   // Text needs a squarer outline to stay inside: a bit with notes, a lot
   // when fully expanded (whole description shown). Morphs with a spring.
   el._phys.setRoundness(container ? 0.16 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
+}
+
+export const MAX_GROW = 3;
+
+export function growFactor(insideCount) {
+  return Math.min(MAX_GROW, Math.sqrt(1 + Math.max(0, insideCount)));
 }
 
 export function positionEl(el, x, y, extra = '') {

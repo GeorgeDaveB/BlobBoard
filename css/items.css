@@ -20,9 +20,11 @@
 
 .item-body {
   position: relative;
-  min-width: 110px;
-  max-width: 200px;
-  min-height: 96px;
+  /* --grow (set by itemView.js): a closed blob on the board gets bigger with
+     every item inside it, like drops merging (R30). 1 = no growth. */
+  min-width: calc(110px * var(--grow, 1));
+  max-width: calc(200px * var(--grow, 1));
+  min-height: calc(96px * var(--grow, 1));
   padding: 24px 26px;
   display: flex;
   flex-direction: column;
@@ -84,9 +86,9 @@
    blob shows up to 3 lines of notes (2 of title), then "…". */
 .item.has-notes > .item-jelly > .item-body > .item-title { max-width: 84%; overflow-wrap: anywhere; }
 .item.has-notes > .item-jelly > .item-body {
-  width: 220px;
-  max-width: 240px;
-  min-height: 140px;
+  width: calc(220px * var(--grow, 1));
+  max-width: calc(240px * var(--grow, 1));
+  min-height: calc(140px * var(--grow, 1));
   padding: 28px 30px;
 }
 
@@ -108,8 +110,8 @@
 .item-done {
   display: none;
   position: absolute;
-  top: 2px;
-  left: 8px;
+  top: 3%;
+  left: 14%;   /* relative, so it stays inside the curve on grown blobs */
   z-index: 1;
   width: 24px;
   height: 24px;

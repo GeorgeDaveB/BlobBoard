@@ -72,6 +72,7 @@ Numbered so the build phases and tests can refer to them.
 - **R27** **Inside view option** (⚙ Settings, per canvas): *Tray below the blob* (R16) or *Inside the blob* (container). Container view: when a blob is edited (✎, long-press, right-click, Enter) or tapped again once selected, it springs into a rounded rectangle — title on top, then the full description in a box (tap to edit in place; **−** hides it for this time only, a "▸ Description" pill brings it back), then a grid of its inside blobs that pop in one after another, plus a + tile. Selecting or editing a blob inside keeps it open; an inside blob that is opened becomes a nested container spanning a full row. It floats above its neighbours (the canvas layout is never disturbed). Nothing about it is remembered per blob: it opens with the description shown every time.
 - **R28** **Reorder inside items** (both views): drag a mini within its grid; the others slide aside. Over the middle of a sibling (held 0.5 s) it goes inside that sibling instead; past the grid's edge onto the board it leaves the group. Grids use equal cells.
 - **R29** **Fast drop into an open blob:** dragging a blob from outside over an expanded blob's grid (tray or container) lights the grid up immediately — no centre-aim, no wait — and dropping puts it inside at the slot under the finger (one undo step). Holding over the middle of a blob in that grid still nests into that blob. An expanded blob never wiggles/flattens against blobs dragged past it.
+- **R30** **Blobs grow with their contents:** a closed blob on the board grows as if its inside items had merged into it like drops — each inside item adds one default blob's *area*: size = base × √(1 + number of items directly inside), capped at 3×. Base = whatever its title/description already make it. Size changes use the bouncy resize. Minis keep their grid cell size; open blobs size to their content. Neighbours are **not** pushed aside when a blob grows (only drags displace blobs).
 - **R26** While a dragged blob is held over another (arming), the target swells enough that its edge shows **all around the held blob** (title and notes included), so you can see which blob you're dropping into.
 - **R19** ✎ or long-press → edit the item.
 - **R20** Duplicate an item into a canvas (any canvas, including the current one) with everything inside it, all its text included. Also "Move to canvas…".
@@ -230,35 +231,40 @@ Run after every load, import and sync merge, so data can never end up broken.
 
 ## 7. Files and folders
 
+✅ = built (as of 2026-10-05, end of phase 2). Everything else is planned for the phase shown.
+
 ```
 BlobBoard/
-├─ index.html              page shell: top bar, board area, sheet/dialog hosts
-├─ manifest.webmanifest    install info (name, icons, colours)
-├─ sw.js                   service worker: offline cache + update prompt
-├─ config.js               Dropbox App key + redirect URLs (public values, not secrets)
+├─ index.html              ✅ page shell + Content-Security-Policy
+├─ manifest.webmanifest    phase 9 — install info (name, icons, colours)
+├─ sw.js                   phase 9 — service worker: offline cache + update prompt
+├─ config.js               phase 8 — Dropbox App key + redirect URLs (public values, not secrets)
 ├─ css/
-│  ├─ base.css             colour tokens, top bar, sheets, buttons, toasts
-│  ├─ board.css            board, background, lines, selection controls
-│  └─ items.css            blob/card looks, morph animation, mini shapes, badge, tray
+│  ├─ base.css             ✅ colour tokens, top bar, sheets, buttons, toasts, dialogs, settings
+│  ├─ board.css            ✅ board, dotted background
+│  └─ items.css            ✅ blob body, states, mini shapes + badge, grids (tray/container), controls
 ├─ js/
-│  ├─ main.js              start-up sequence
-│  ├─ core/      store.js · model.js · events.js · ids.js · migrate.js
-│  ├─ persist/   db.js · localRepo.js
-│  ├─ sync/      dropboxAuth.js · dropboxApi.js · syncEngine.js · merge.js
-│  ├─ services/  layout.js · geometry.js · color.js · imageProcessor.js ·
-│  │             exportJson.js · exportPng.js
-│  └─ ui/        app.js · topBar.js · board.js · itemView.js · tray.js · linksLayer.js ·
-│                gestures.js · dragDrop.js · editSheet.js · tagPicker.js · colorPicker.js ·
-│                imageLibrary.js · canvasMenu.js · settingsSheet.js · dialogs.js
-├─ icons/                  app icons (192 px, 512 px, maskable)
-├─ tests/index.html        in-browser test runner + tests for the pure modules
-├─ README.md               how to run locally, deploy, set up Dropbox
+│  ├─ main.js              ✅ start-up sequence
+│  ├─ core/      ✅ store.js · model.js · events.js · ids.js · migrate.js
+│  ├─ persist/   ✅ db.js · localRepo.js
+│  ├─ sync/      phase 8 — dropboxAuth.js · dropboxApi.js · syncEngine.js · merge.js
+│  ├─ services/  ✅ layout.js · geometry.js · color.js
+│  │             phase 4/7 — imageProcessor.js · exportJson.js · exportPng.js
+│  └─ ui/        ✅ app.js · board.js · itemView.js · tray.js · physics.js · gestures.js ·
+│                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js
+│                phase 3+ — linksLayer.js · selection.js · tagPicker.js · imageLibrary.js · canvasMenu.js
+├─ icons/                  phase 9 — app icons (192 px, 512 px, maskable)
+├─ tests/                  ✅ index.html + runner.js + *.test.js (in-browser unit tests)
+├─ README.md               ✅ run locally / deploy
+├─ HANDOVER.md             ✅ status, decision log, how it works, gotchas — read this first
 └─ DESIGN.md               this file
 ```
 
-About 35 small files. Each has one job and should stay under ~300 lines.
-
----
+**Deviations from the original plan (intentional):**
+- `topBar.js` was not split out: the top bar lives in `app.js` (it's small).
+- `dragDrop.js` was not split out: drop-target logic lives in `board.js` next to the drag code it depends on.
+- `physics.js` (new) replaced CSS keyframe morphing — see §8.5 and HANDOVER.md.
+- `tray.js` renders both the tray view and the container view grid.
 
 ## 8. Modules and components
 
