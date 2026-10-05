@@ -39,7 +39,8 @@ const SPRING = {
   flat: [0.16, 0.76],
   size: [0.085, 0.80],
   glide: [0.075, 0.80],
-  grow: [0.075, 0.74]   // birth: grows from a dot with overshoot
+  grow: [0.075, 0.80],     // birth, expanding: soft, overshoots to ~1.2x
+  growBack: [0.30, 0.50]   // birth, contracting back to size: snappy
 };
 
 const KEYS = ['ax', 'ay', 'px', 'py', 'lift', 'q', 'sx', 'sy', 'ox', 'oy', 'fr', 'fl', 'ft', 'fb', 'g'];
@@ -191,7 +192,7 @@ export function createPhysics(layer, body, seed) {
       rest = spring(s, 'sy', 1, SPRING.size) && rest;
       rest = spring(s, 'ox', 0, SPRING.glide) && rest;
       rest = spring(s, 'oy', 0, SPRING.glide) && rest;
-      rest = spring(s, 'g', 1, SPRING.grow) && rest;
+      rest = spring(s, 'g', 1, s.vg >= 0 && s.g < 1.5 ? SPRING.grow : SPRING.growBack) && rest;
       const settled = rest && !s.dragging && contacts.length === 0;
       applyTransform(settled);
       return settled;

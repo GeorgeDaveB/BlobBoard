@@ -277,20 +277,10 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
     wheelTimer = setTimeout(() => setMoving(false), 150);
   }, { passive: false });
 
-  // Birth animation for an item the user just created: the blob grows from a
-  // dot (physics.spawn) and a soft ripple in its colour spreads out.
+  // Birth animation for an item the user just created: grows from a dot.
   function spawn(id) {
     const el = els.get(id);
-    const item = store.item(id);
-    if (!el || !item || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    el._phys.spawn();
-    const ring = document.createElement('div');
-    ring.className = 'spawn-ring';
-    ring.style.left = item.x + 'px';
-    ring.style.top = item.y + sizeOf(id).h / 2 + 'px';
-    ring.style.setProperty('--c', item.color);
-    ring.addEventListener('animationend', () => ring.remove());
-    itemsLayer.prepend(ring);
+    if (el) el._phys.spawn();
   }
 
   const board = {

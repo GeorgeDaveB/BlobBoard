@@ -97,7 +97,7 @@
 .item.done .item-title { text-decoration: line-through; }
 
 /* States */
-.item.selected .item-body { box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--ink), var(--shadow-1); }
+.item.selected .item-body { box-shadow: 0 0 0 4px #fff, 0 4px 16px rgba(40, 30, 20, .22); }
 .item.holding .item-body { box-shadow: 0 0 0 8px rgba(226, 96, 79, .35), var(--shadow-1); }
 .item.dragging .item-body { box-shadow: var(--shadow-2); }
 
@@ -133,19 +133,3 @@
 }
 .item.dragging .item-ctl { opacity: 0; }
 
-/* Birth ripple behind a newly created blob */
-.spawn-ring {
-  position: absolute;
-  width: 150px;
-  height: 150px;
-  margin: -75px 0 0 -75px;
-  border-radius: 50%;
-  border: 3px solid var(--c, #ff8a7a);
-  background: radial-gradient(circle, transparent 55%, var(--c, #ff8a7a) 120%);
-  pointer-events: none;
-  animation: spawn-ring .75s cubic-bezier(.2, .7, .3, 1) forwards;
-}
-@keyframes spawn-ring {
-  0%   { transform: scale(.15); opacity: .75; }
-  100% { transform: scale(1.7); opacity: 0; }
-}
