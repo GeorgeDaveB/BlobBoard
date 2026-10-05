@@ -11,6 +11,6 @@ Start every session by reading `HANDOVER.md` (status, decision log, how it works
 ## Applied Learning
 One bullet, ≤15 words, no explanation.
 
-- Hidden browser pane: no rAF, throttled timers, no focus; use physics `tick()`.
+- Hidden browser pane: no rAF/ResizeObserver, throttled timers, no focus; use `tick()`, screenshots.
 
 Bullet count: 1/30
