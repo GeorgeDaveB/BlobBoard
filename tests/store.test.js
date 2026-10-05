@@ -134,6 +134,40 @@ export const tests = {
     assertEqual(store.ui.expanded, []);
   },
 
+  'reorder: moves an item among its siblings, one undo step': () => {
+    const { store } = setup();
+    const g = store.createItem({});
+    const k = ['a', 'b', 'c', 'd'].map(t => store.createItem({ parentId: g, title: t }));
+    const titles = () => Object.values(store.canvas().items).filter(i => i.parentId === g).sort((x, y) => x.order - y.order).map(i => i.title).join('');
+    assert(store.reorderItem(k[3], 0));
+    assertEqual(titles(), 'dabc');
+    assert(store.reorderItem(k[0], 3));
+    assertEqual(titles(), 'dbca');
+    assertEqual(store.reorderItem(k[0], 3), false, 'same place = no change');
+    store.undo();
+    assertEqual(titles(), 'dabc');
+  },
+
+  'expandTo opens the item and everything above it': () => {
+    const { store } = setup();
+    const a = store.createItem({});
+    const b = store.createItem({ parentId: a });
+    const c = store.createItem({ parentId: b });
+    store.expandTo(c);
+    assertEqual(store.ui.expanded, [a, b, c]);
+    store.expandTo(a);
+    assertEqual(store.ui.expanded, [a]);
+  },
+
+  'canvas setting insideView is saved and undoable': () => {
+    const { store } = setup();
+    assertEqual(store.canvas().settings.insideView, 'tray');
+    store.setCanvasSetting('insideView', 'container');
+    assertEqual(store.canvas().settings.insideView, 'container');
+    store.undo();
+    assertEqual(store.canvas().settings.insideView, 'tray');
+  },
+
   'delete removes everything inside and touching lines; undo restores': () => {
     const { store } = setup();
     const a = store.createItem({ title: 'group' });

@@ -82,7 +82,7 @@
 /* With notes the blob grows: wider, taller, extra padding so text stays
    inside the outline (physics also makes it a bit squarer). A collapsed
    blob shows up to 3 lines of notes (2 of title), then "…". */
-.item.has-notes > .item-jelly > .item-body .item-title { max-width: 84%; overflow-wrap: anywhere; }
+.item.has-notes > .item-jelly > .item-body > .item-title { max-width: 84%; overflow-wrap: anywhere; }
 .item.has-notes > .item-jelly > .item-body {
   width: 220px;
   max-width: 240px;
@@ -97,7 +97,7 @@
   max-width: 260px;
   padding: 26px 24px;
 }
-.item.expanded > .item-jelly > .item-body .item-notes {
+.item.expanded > .item-jelly > .item-body > .item-notes {
   max-width: 88%;
   display: block;
   -webkit-line-clamp: unset;
@@ -123,7 +123,10 @@
 }
 .item.done > .item-jelly > .item-done { display: flex; }
 .item.done > .item-jelly > .item-body { filter: saturate(.2); opacity: .55; }
-.item.done > .item-jelly > .item-body .item-title { text-decoration: line-through; }
+/* An open container stays solid (its inside items are in it); only its title fades. */
+.item.done.container-open > .item-jelly > .item-body { filter: none; opacity: 1; }
+.item.done.container-open > .item-jelly > .item-body > .item-title { opacity: .55; }
+.item.done > .item-jelly > .item-body > .item-title { text-decoration: line-through; }
 
 /* States */
 .item.selected > .item-jelly > .item-body { box-shadow: 0 0 0 4px #fff, 0 4px 16px rgba(40, 30, 20, .22); }
@@ -175,13 +178,16 @@
   margin-top: -4px;
 }
 
-/* ---- tray (expanded group) ---- */
+/* ---- grid of inside items (tray or container) ----
+   Equal cells, so it reads as a grid and reordering is predictable. */
 .tray {
+  --cell: 108px;
   display: grid;
-  grid-template-columns: repeat(var(--cols, 3), auto);
+  grid-template-columns: repeat(var(--cols, 3), var(--cell));
+  grid-auto-rows: minmax(84px, auto);
   justify-items: center;
-  align-items: start;
-  gap: 10px 12px;
+  align-items: center;
+  gap: 10px;
   padding: 14px;
   border-radius: 22px;
   cursor: default;
@@ -223,11 +229,100 @@
 }
 .tray-add:hover { background: #fff; color: var(--ink); transform: scale(1.06); }
 
-/* Minis: same component, smaller, laid out by the tray grid. */
+/* Minis: same component, smaller, laid out by the grid. */
 .item.mini {
   position: relative;
   zoom: .62;
 }
+.item.mini.has-notes > .item-jelly > .item-body { width: 168px; } /* fits a cell */
+.item.mini.pop { animation: mini-pop .42s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes mini-pop { from { transform: scale(.3); opacity: 0; } }
+
+/* ---- container view: the expanded blob holds its own grid ----
+   It springs into a rounded rectangle (physics roundness), title on top,
+   then the description box, then the grid of inside items. */
+.item.expanded.container-open > .item-jelly > .item-body {
+  width: auto;
+  min-width: 300px;
+  max-width: 440px; /* long descriptions wrap instead of stretching it */
+  max-height: none;
+  padding: 16px 14px 12px;
+  justify-content: flex-start;
+  gap: 10px;
+  cursor: default;
+}
+.item.container-open > .item-jelly > .item-body > .item-title {
+  max-width: 90%;
+  font-size: 17px;
+  -webkit-line-clamp: 3;
+}
+.item.container-open > .item-jelly > .item-body > .item-notes { display: none; }
+.item-desc, .desc-show { display: none; }
+.item.container-open > .item-jelly > .item-body > .item-desc:not([hidden]) {
+  display: block;
+  position: relative;
+  align-self: stretch;
+  padding: 10px 34px 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .32);
+  text-align: left;
+  cursor: text;
+}
+.desc-text {
+  font-size: 13.5px;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.desc-text.empty { opacity: .6; font-style: italic; }
+.desc-input {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+}
+.desc-hide {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(255, 255, 255, .55);
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.item.container-open > .item-jelly > .item-body > .desc-show:not([hidden]) {
+  display: inline-block;
+  align-self: flex-start;
+  border: 0;
+  border-radius: 12px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, .4);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.tray-inline {
+  align-self: center;
+  padding: 6px 2px 4px;
+  background: rgba(255, 255, 255, .22);
+  border-radius: 16px;
+}
+/* An open container inside a container spans a full row, at full size. */
+.tray-inline > .item.mini.container-open { grid-column: 1 / -1; zoom: 1; justify-self: stretch; width: auto; }
+.tray-inline > .item.mini.container-open > .item-jelly > .item-body { min-width: 0; }
+.item.container-open > .item-jelly > .item-kids { display: none; }
 .item.mini.expanded > .item-jelly > .item-body { box-shadow: 0 0 0 4px #fff, var(--shadow-1); }
 
 /* Ghost: the full-size copy that follows the finger when a mini is dragged */

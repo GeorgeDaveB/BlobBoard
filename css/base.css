@@ -301,3 +301,23 @@ html, body {
   border-radius: 14px;
   z-index: 100;
 }
+
+/* ---- settings ---- */
+.settings { width: min(420px, 100%); padding: 0 0 18px; }
+.settings .sheet-head { padding: 14px 18px 6px; }
+.choice-group { border: 0; margin: 0; padding: 6px 18px; display: flex; flex-direction: column; gap: 8px; }
+.choice-group legend { padding: 0 0 8px; }
+.choice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+}
+.choice:has(input:checked) { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.choice input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--ink); }
+.choice span { display: flex; flex-direction: column; gap: 2px; }
+.choice small { color: var(--muted); line-height: 1.35; }
+.settings-note { margin: 4px 18px 0; color: var(--muted); font-size: 13px; }

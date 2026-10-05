@@ -83,6 +83,16 @@ export const tests = {
     assertEqual(ancestorsOf(c, 'a').includes('a'), false);
   },
 
+  'sanitize: insideView defaults to tray, keeps container': () => {
+    const c = newCanvas();
+    c.settings.insideView = 'weird';
+    sanitizeCanvas(c);
+    assertEqual(c.settings.insideView, 'tray');
+    c.settings.insideView = 'container';
+    sanitizeCanvas(c);
+    assertEqual(c.settings.insideView, 'container');
+  },
+
   'sanitize: bad fields are repaired': () => {
     const c = newCanvas();
     c.items.z1 = { title: 5, color: 'nope', x: 'a', tagIds: ['t', 't', 3], done: 'yes' };

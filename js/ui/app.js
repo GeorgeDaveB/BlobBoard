@@ -4,6 +4,7 @@
 import { createBoard } from './board.js';
 import { createEditSheet, newSessionKey } from './editSheet.js';
 import { initDialogs, toast, confirmDialog } from './dialogs.js';
+import { createSettingsSheet } from './settingsSheet.js';
 import { descendantsOf, childrenOf } from '../core/model.js';
 import { spotInside } from '../services/layout.js';
 
@@ -12,7 +13,8 @@ const ICONS = {
   redo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>',
   fit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg>',
   zoomIn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
-  zoomOut: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>'
+  zoomOut: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
 };
 
 const WIDE = '(min-width: 760px)';
@@ -30,7 +32,8 @@ export function mountApp({ root, store, repo }) {
   const btnOut = iconButton('zoomOut', 'Zoom out');
   const btnIn = iconButton('zoomIn', 'Zoom in');
   const btnFit = iconButton('fit', 'Fit everything on screen');
-  tools.append(btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit);
+  const btnGear = iconButton('gear', 'Settings');
+  tools.append(btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), btnGear);
   top.append(name, tools);
 
   const main = document.createElement('main');
@@ -78,7 +81,8 @@ export function mountApp({ root, store, repo }) {
   const board = createBoard({
     host: main,
     store,
-    onEdit: id => openEditor(id),
+    onEdit: id => openEditor(id, { expand: true }),
+    onNotes: (id, text, key) => store.updateItem(id, { notes: text }, { coalesce: key }),
     onAddInside: id => createInside(id),
     onCreateAt: (x, y) => createAt(x, y),
     onTapEmpty: () => { if (editor.isOpen) closeLayer(editorLayer); },
@@ -105,10 +109,21 @@ export function mountApp({ root, store, repo }) {
     else requestAnimationFrame(() => board.fit());
   }
 
+  const settings = createSettingsSheet({ host: root, store, onRequestClose: () => closeLayer(settingsLayer) });
+  let settingsLayer = 0;
+  function openSettings() {
+    if (settings.isOpen) return;
+    settings.open();
+    settingsLayer = openLayer(() => { settingsLayer = 0; settings.close(); });
+  }
+
   // ---- editor -------------------------------------------------------------
+  // opts.expand: opened on purpose (✎, long-press, right-click, Enter). In
+  // container view that also opens the blob into its container.
   let editorLayer = 0;
   function openEditor(id, opts = {}) {
     if (!store.item(id)) return;
+    if (opts.expand && store.canvas().settings.insideView === 'container') store.expandTo(id);
     if (editor.isOpen && editor.itemId === id) return;
     if (editor.isOpen) editor.close();
     editor.open(id, opts);
@@ -209,6 +224,7 @@ export function mountApp({ root, store, repo }) {
   btnIn.addEventListener('click', () => board.zoomBy(1.25));
   btnOut.addEventListener('click', () => board.zoomBy(0.8));
   btnFit.addEventListener('click', () => board.fit());
+  btnGear.addEventListener('click', openSettings);
   fab.addEventListener('click', () => { const s = board.centerSpot(); createAt(s.x, s.y); });
 
   // ---- keyboard -----------------------------------------------------------
@@ -225,7 +241,7 @@ export function mountApp({ root, store, repo }) {
     if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && store.ui.selectedId) { e.preventDefault(); deleteWithUndo(store.ui.selectedId); }
-    else if (e.key === 'Enter' && store.ui.selectedId) { e.preventDefault(); openEditor(store.ui.selectedId); }
+    else if (e.key === 'Enter' && store.ui.selectedId) { e.preventDefault(); openEditor(store.ui.selectedId, { expand: true }); }
   });
 
   // ---- start --------------------------------------------------------------

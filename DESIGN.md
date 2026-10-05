@@ -69,6 +69,8 @@ Numbered so the build phases and tests can refer to them.
 - **R16** Tap selects an item. Tapping the **selected** item again (or a quick double-click) **expands it fully**: the whole description shows (the outline morphs into a rounded card so it fits) and its inside items appear underneath, smaller (real title, colour, thumbnail), all of them, in rows of 3–4, followed by a **+ tile** that adds a new item inside it. Tap again → collapse. Inside the tray, minis work the same way (tap to select, tap again to expand).
 - **R17** Drag a small one out onto the canvas → it leaves the group.
 - **R18** ~~Inside boards (⤢), breadcrumb~~ — **parked** (2026-10-05). Everything happens on the one canvas: items are added inside an expanded item with its + tile, taken out by dragging a mini out of the tray.
+- **R27** **Inside view option** (⚙ Settings, per canvas): *Tray below the blob* (R16) or *Inside the blob* (container). Container view: when a blob is edited (✎, long-press, right-click, Enter) or tapped again once selected, it springs into a rounded rectangle — title on top, then the full description in a box (tap to edit in place; **−** hides it for this time only, a "▸ Description" pill brings it back), then a grid of its inside blobs that pop in one after another, plus a + tile. Selecting or editing a blob inside keeps it open; an inside blob that is opened becomes a nested container spanning a full row. It floats above its neighbours (the canvas layout is never disturbed). Nothing about it is remembered per blob: it opens with the description shown every time.
+- **R28** **Reorder inside items** (both views): drag a mini within its grid; the others slide aside. Over the middle of a sibling (held 0.5 s) it goes inside that sibling instead; past the grid's edge onto the board it leaves the group. Grids use equal cells.
 - **R26** While a dragged blob is held over another (arming), the target swells enough that its edge shows **all around the held blob** (title and notes included), so you can see which blob you're dropping into.
 - **R19** ✎ or long-press → edit the item.
 - **R20** Duplicate an item into a canvas (any canvas, including the current one) with everything inside it, all its text included. Also "Move to canvas…".
@@ -410,7 +412,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 **`ui/canvasMenu.js`** — the canvas actions (R3, R4). Export file: `Life.blobboard.json`. Export picture: `Life-Health-2026-10-05.png`. On Android also offers **Share** (straight to Drive, mail, etc.). Import always creates a **new** canvas with fresh ids, so importing twice on one device can't clash; tags are matched by name; pictures dedupe by fingerprint.
 
-**`ui/settingsSheet.js`** — Dropbox connect/disconnect + last sync time; motion (Full / Calm / Off, following the device's "reduce motion" setting by default); tag manager; picture library; app version + "Check for update".
+**`ui/settingsSheet.js`** — *(phase 2 version: per-canvas "Show inside items: Tray / Inside the blob", R27; the rest arrives in later phases)* — Dropbox connect/disconnect + last sync time; motion (Full / Calm / Off, following the device's "reduce motion" setting by default); tag manager; picture library; app version + "Check for update".
 
 **`ui/dialogs.js`** — confirm, rename prompt, toast messages, an "Undo" toast after deletes.
 
@@ -438,7 +440,10 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 |---|---|---|---|
 | Item | click | tap | select (shows ✎ ●) |
 | Selected item | click again / double-click | tap again | expand fully (whole notes + tray with + tile); again → collapse |
-| + tile in a tray | click | tap | new item inside that item |
+| + tile in a tray / container | click | tap | new item inside that item |
+| Mini in a grid | drag within the grid | drag within the grid | reorder; the others slide aside (R28) |
+| Description box (container) | click | tap | edit it in place; **−** hides it for now |
+| ⚙ | click | tap | Settings: tray or container view (per canvas) |
 | Item | right-click, or ✎ | long-press then release, or ✎ | open the editor |
 | Item | drag | drag | move |
 | Item dragged over another item, held 0.5 s | | | target swells to show around the held blob → drop = put inside |
@@ -613,7 +618,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 |---|---|---|
 | 0 Setup | folder, local server config, test runner; repo + Pages (you); a "hello" page live | page opens on PC and phone |
 | 1 Board basics | model, store, device database, pan/zoom, animated blobs, create/edit (title, notes, colour picker, done), move, undo | items survive a reload; tests pass |
-| 2 Groups | drag-hold-into (target swells around the held blob), mini shapes + badge, tap-again full expansion with tray + add tile (nested), drag minis out, back stack | R14–R17, R26 checklist passes |
+| 2 Groups | drag-hold-into (target swells around the held blob), mini shapes + badge, tap-again full expansion with tray + add tile (nested), container view option (R27), reorder (R28), drag minis out, back stack | R14–R17, R26–R28 checklist passes |
 | 3 Lines | connect dot, lines, select, + / − arrows, × delete, removal on regrouping | R21–R23 pass |
 | 3b Multi-select | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
 | 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |

@@ -4,7 +4,7 @@ import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, itemRect } fro
 import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps } from '../services/layout.js';
 import { childrenOf, descendantsOf } from '../core/model.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
-import { renderTray, disposeTray } from './tray.js';
+import { renderTray, disposeTray, syncInline, removeInline } from './tray.js';
 import { attachGestures } from './gestures.js';
 import { setPaused } from './physics.js';
 
@@ -13,7 +13,7 @@ const EDGE_SPEED = 14;  // max auto-pan speed (px per frame)
 const DOT = 24;         // background dot spacing at zoom 1
 const ARM_MS = 500;     // hold over a blob this long to drop *into* it
 
-export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTapEmpty, onViewChange }) {
+export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreateAt, onTapEmpty, onViewChange }) {
   const boardEl = document.createElement('div');
   boardEl.className = 'board';
   const world = document.createElement('div');
@@ -82,27 +82,30 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
     const ui = store.ui;
     const seen = new Set();
     allEls.clear();
-    const trayCtx = { doc, ui, onEdit, onAdd: onAddInside, register: (id, el) => allEls.set(id, el) };
+    const container = doc.settings.insideView === 'container';
+    const trayCtx = { doc, ui, container, onEdit, onNotes, onAdd: onAddInside, register: (id, el) => allEls.set(id, el) };
 
     for (const item of boardItems()) {
       seen.add(item.id);
       let el = els.get(item.id);
       if (!el) {
-        el = createItemEl(item, { onEdit });
+        el = createItemEl(item, { onEdit, onNotes });
         els.set(item.id, el);
         itemsLayer.append(el);
         ro.observe(el._parts.body);
         io.observe(el);
       }
       const expanded = ui.expanded[0] === item.id;
-      updateItemEl(el, item, { selected: ui.selectedId === item.id, kids: childrenOf(doc, item.id), expanded });
+      updateItemEl(el, item, { selected: ui.selectedId === item.id, kids: childrenOf(doc, item.id), expanded, container });
       allEls.set(item.id, el);
       if (!drag || drag.id !== item.id || drag.ghost) {
         positionEl(el, item.x, item.y);
         el.style.zIndex = expanded ? 900000 : item.z;
       }
-      // Tray (expanded item)
-      if (expanded) {
+      // Expanded item: grid inside the blob (container view) or a tray below it.
+      if (expanded && container) syncInline(el, item, 0, trayCtx);
+      else removeInline(el);
+      if (expanded && !container) {
         if (!el._tray) {
           el._tray = document.createElement('div');
           el._tray.className = 'tray tray-root';
@@ -120,6 +123,7 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
       ro.unobserve(el._parts.body);
       io.unobserve(el);
       if (el._tray) disposeTray(el._tray);
+      removeInline(el);
       el._phys.dispose();
       el.remove();
       els.delete(id);
@@ -176,7 +180,7 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
     for (const e of document.elementsFromPoint(x, y)) {
       const it = e.closest('.item');
       const tr = e.closest('.tray');
-      if (tr && (!it || !tr.contains(it))) return { kind: 'tray' };
+      if (tr && (!it || !tr.contains(it))) return { kind: 'tray', el: tr };
       if (it) {
         if (it === drag.el || it.classList.contains('ghosted')) continue;
         return { kind: 'item', id: it.dataset.id, el: it };
@@ -198,7 +202,22 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
   function updateTarget() {
     const hit = hitTest(drag.px, drag.py);
     drag.hit = hit;
-    const target = hit.kind === 'item' && !drag.banned.has(hit.id) ? hit.id : null;
+    let target = hit.kind === 'item' && !drag.banned.has(hit.id) ? hit.id : null;
+
+    // Reordering: a mini dragged within its own grid. Over the middle of a
+    // sibling it can still be put inside that sibling (hold); anywhere else
+    // in the grid it moves to that spot and the others slide aside.
+    drag.reorder = false;
+    const grid = drag.ghost ? drag.miniEl.parentElement : null;
+    if (grid) {
+      const sib = hit.kind === 'item' && hit.el.parentElement === grid ? hit.el : null;
+      const inGrid = sib || (hit.kind === 'tray' && hit.el === grid);
+      if (inGrid && !(sib && inCentre(sib, drag.px, drag.py))) {
+        drag.reorder = true;
+        target = null;
+        placeMini(grid, drag.px, drag.py);
+      }
+    }
     if (target === drag.hoverId) return;
     disarm();
     drag.hoverId = target;
@@ -213,6 +232,54 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
       el._phys.swell(true, swellToShow(el));
       if (navigator.vibrate) navigator.vibrate(20);
     }, ARM_MS);
+  }
+
+  function inCentre(el, x, y) {
+    const r = el._parts.body.getBoundingClientRect();
+    return Math.abs(x - (r.left + r.width / 2)) < r.width * 0.3 && Math.abs(y - (r.top + r.height / 2)) < r.height * 0.3;
+  }
+
+  // Grid slots (cell centres) measured once when a mini drag starts, as
+  // fractions of the grid's box, so sliding siblings can't confuse them.
+  function measureSlots(grid) {
+    const g = grid.getBoundingClientRect();
+    return [...grid.children].filter(c => c.classList.contains('item')).map(c => {
+      const r = c.getBoundingClientRect();
+      return { x: (r.left + r.width / 2 - g.left) / g.width, y: (r.top + r.height / 2 - g.top) / g.height };
+    });
+  }
+
+  // Moves the (faded) mini to the grid slot nearest the finger; siblings
+  // slide to their new places (FLIP animation).
+  function placeMini(grid, x, y) {
+    const mini = drag.miniEl;
+    if (!drag.slots) drag.slots = measureSlots(grid);
+    const g = grid.getBoundingClientRect();
+    const fx = (x - g.left) / g.width, fy = (y - g.top) / g.height;
+    let idx = 0, bestD = Infinity;
+    drag.slots.forEach((p, i) => {
+      const d = Math.hypot((fx - p.x) * g.width, (fy - p.y) * g.height);
+      if (d < bestD) { bestD = d; idx = i; }
+    });
+    const items = [...grid.children].filter(c => c.classList.contains('item'));
+    if (items.indexOf(mini) === idx) return;
+    const sibs = items.filter(c => c !== mini);
+    const ref = sibs[idx] || grid.querySelector(':scope > .tray-add');
+    const before = new Map(sibs.map(n => [n, n.getBoundingClientRect()]));
+    grid.insertBefore(mini, ref);
+    for (const n of sibs) {
+      const a = before.get(n);
+      const b = n.getBoundingClientRect();
+      const k = b.width / Math.max(1, n.offsetWidth) || 1; // screen px per local px
+      const dx = (a.left - b.left) / k, dy = (a.top - b.top) / k;
+      if (!dx && !dy) continue;
+      n.style.transition = 'none';
+      n.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      requestAnimationFrame(() => {
+        n.style.transition = 'transform .24s cubic-bezier(.2, .8, .3, 1.25)';
+        n.style.transform = '';
+      });
+    }
   }
 
   // How much an armed target must puff up so its edge shows all around the
@@ -295,6 +362,9 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
       d.el._phys.dispose();
       d.el.remove();
       d.miniEl.classList.remove('ghosted');
+      // Clear any slide animation left on the grid's cells.
+      const grid = d.miniEl.parentElement;
+      if (grid) for (const c of grid.children) { c.style.transform = ''; c.style.transition = ''; }
     }
     drag = null;
     return d;
@@ -325,6 +395,14 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
     const item = store.item(d.id);
     const hit = d.hit || { kind: 'outside' };
 
+    // 0. Moved within its own grid: keep the new order.
+    if (d.reorder && !d.armedId) {
+      const grid = d.miniEl.parentElement;
+      const idx = grid ? [...grid.children].filter(c => c.classList.contains('item')).indexOf(d.miniEl) : -1;
+      if (idx >= 0) store.reorderItem(d.id, idx);
+      render();
+      return;
+    }
     // 1. Held over a blob long enough: put it inside.
     if (d.armedId && hit.kind === 'item' && hit.id === d.armedId) {
       const p = spotInside(childrenOf(doc, d.armedId));
@@ -336,7 +414,7 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
     // 2. On the board (empty space, or over a top-level blob without
     //    holding): land there and push others aside.
     const overMini = hit.kind === 'item' && hit.el && hit.el.classList.contains('mini');
-    if (hit.kind === 'empty' || (hit.kind === 'item' && !overMini)) {
+    if (hit.kind === 'empty' || (hit.kind === 'item' && !overMini && !d.banned.has(hit.id))) {
       const pushes = pushesFor(d.id, d.x, d.y, d.size);
       const from = new Map(pushes.map(m => [m.id, { x: store.item(m.id).x, y: store.item(m.id).y }]));
       if (item.parentId === null) {
@@ -348,7 +426,7 @@ export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTa
       glide(pushes, from);
       return;
     }
-    // 3. Anywhere else (a tray, outside the board): snap back.
+    // 3. Anywhere else (a tray, its own container, outside the board): snap back.
     render();
   }
 

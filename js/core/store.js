@@ -1,6 +1,6 @@
 // The single source of truth in memory. Only these actions change data, so
 // every change is saved, (later) synced and undoable the same way.
-import { newItem, applyItemPatch, descendantsOf, childrenOf, canMoveInto, maxZ } from './model.js';
+import { newItem, applyItemPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
 import { createEmitter } from './events.js';
 
 export const UNDO_LIMIT = 50;
@@ -98,6 +98,37 @@ export function createStore({ repo, now = () => Date.now() }) {
       ui.expanded = path.slice();
       fixUi();
       events.emit({ type: 'ui' });
+    },
+
+    // Opens the view of `id` (and everything above it), e.g. when it is
+    // being edited in container view. Keeps sibling levels as they are.
+    expandTo(id) {
+      const doc = canvases.get(ui.canvasId);
+      if (!doc || !doc.items[id]) return;
+      const chain = [...ancestorsOf(doc, id).reverse(), id];
+      store.setExpanded(chain);
+    },
+
+    // Per-canvas settings (e.g. insideView: 'tray' | 'container').
+    setCanvasSetting(key, value) {
+      return commit(null, doc => {
+        if (doc.settings[key] === value) return false;
+        doc.settings[key] = value;
+      });
+    },
+
+    // Moves `id` to position `index` among its siblings (tray / container order).
+    reorderItem(id, index) {
+      return commit(null, (doc, t) => {
+        const item = doc.items[id];
+        if (!item) return false;
+        const sibs = childrenOf(doc, item.parentId).filter(s => s.id !== id);
+        const at = Math.max(0, Math.min(sibs.length, index));
+        const before = childrenOf(doc, item.parentId).map(s => s.id).join();
+        sibs.splice(at, 0, item);
+        if (sibs.map(s => s.id).join() === before) return false;
+        sibs.forEach((s, i) => { if (s.order !== i) { s.order = i; s.updatedAt = t; } });
+      });
     },
 
     // Expand an item fully (whole notes + its inside items + an add tile),

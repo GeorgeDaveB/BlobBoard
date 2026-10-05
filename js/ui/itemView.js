@@ -3,6 +3,8 @@
 //   .item (position, moved by JS)
 //     .item-jelly (physics transform)
 //       .item-body (outline set by physics + CSS bob; clips its text)
+//         title, notes preview, and in container view: description box
+//         (tap to edit in place, − to hide) + the inline grid (tray.js)
 //       .item-done (✓ when done)
 //       .item-kids (collapsed group: up to 6 mini shapes + count badge)
 //     ✎ control
@@ -14,7 +16,9 @@ import { seededRandom } from '../core/ids.js';
 import { badgeText } from '../core/model.js';
 import { createPhysics } from './physics.js';
 
-export function createItemEl(item, { onEdit, mini = false }) {
+let inlineSeq = 0;
+
+export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   const el = document.createElement('div');
   el.className = mini ? 'item mini' : 'item';
   el.dataset.id = item.id;
@@ -29,7 +33,52 @@ export function createItemEl(item, { onEdit, mini = false }) {
   done.className = 'item-done';
   done.textContent = '✓';
   done.setAttribute('aria-hidden', 'true');
-  body.append(title, notes);
+  // Description box (container view only). Board gestures ignore it so you
+  // can tap into the text without dragging the blob.
+  const desc = document.createElement('div');
+  desc.className = 'item-desc';
+  desc.dataset.noGesture = '';
+  const descText = document.createElement('div');
+  descText.className = 'desc-text';
+  const descInput = document.createElement('textarea');
+  descInput.className = 'desc-input';
+  descInput.hidden = true;
+  descInput.rows = 2;
+  descInput.setAttribute('aria-label', 'Description');
+  const descHide = document.createElement('button');
+  descHide.type = 'button';
+  descHide.className = 'desc-hide';
+  descHide.textContent = '−';
+  descHide.setAttribute('aria-label', 'Hide description');
+  desc.append(descText, descInput, descHide);
+  const descShow = document.createElement('button');
+  descShow.type = 'button';
+  descShow.className = 'desc-show';
+  descShow.dataset.noGesture = '';
+  descShow.textContent = '▸ Description';
+  body.append(title, notes, desc, descShow);
+
+  let editKey = null;
+  const autosize = () => { descInput.style.height = 'auto'; descInput.style.height = descInput.scrollHeight + 2 + 'px'; };
+  descText.addEventListener('click', e => {
+    e.stopPropagation();
+    editKey = 'inline:' + (++inlineSeq);
+    descInput.value = el._notes || '';
+    descText.hidden = true;
+    descInput.hidden = false;
+    autosize();
+    descInput.focus();
+  });
+  descInput.addEventListener('input', () => { autosize(); if (onNotes) onNotes(el.dataset.id, descInput.value, editKey); });
+  descInput.addEventListener('blur', () => {
+    descText.textContent = descInput.value || 'Tap to add a description';
+    descText.classList.toggle('empty', !descInput.value);
+    descInput.hidden = true;
+    descText.hidden = false;
+  });
+  descInput.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); descInput.blur(); } });
+  descHide.addEventListener('click', e => { e.stopPropagation(); el._descHidden = true; showDesc(el); });
+  descShow.addEventListener('click', e => { e.stopPropagation(); el._descHidden = false; showDesc(el); });
 
   const kids = document.createElement('div');
   kids.className = 'item-kids';
@@ -48,7 +97,7 @@ export function createItemEl(item, { onEdit, mini = false }) {
 
   el.append(jellyLayer, edit);
   applyBob(body, item.seed);
-  el._parts = { body, title, notes, kids, shapes, badge };
+  el._parts = { body, title, notes, kids, shapes, badge, desc, descText, descInput, descShow };
   el._phys = createPhysics(jellyLayer, body, item.seed);
   return el;
 }
@@ -73,9 +122,28 @@ function applyBob(body, seed) {
   body.style.setProperty('--bdl', (-r() * bd).toFixed(2) + 's');
 }
 
-// ctx: { selected, kids (inside items, in tray order), expanded, armed }
+function showDesc(el) {
+  const p = el._parts;
+  const open = el.classList.contains('container-open');
+  p.desc.hidden = !open || !!el._descHidden;
+  p.descShow.hidden = !open || !el._descHidden;
+}
+
+// ctx: { selected, kids (inside items, in tray order), expanded,
+//        container (expanded in container view) }
 export function updateItemEl(el, item, ctx) {
   const p = el._parts;
+  el._notes = item.notes;
+  const container = !!(ctx.expanded && ctx.container);
+  if (el.classList.contains('container-open') !== container) {
+    el.classList.toggle('container-open', container);
+    el._descHidden = false; // shown again every time it opens
+  }
+  if (document.activeElement !== p.descInput) {
+    p.descText.textContent = item.notes || 'Tap to add a description';
+    p.descText.classList.toggle('empty', !item.notes);
+  }
+  showDesc(el);
   const sig = [item.title, item.notes, item.color, item.done].join('\u0001');
   if (el._sig !== sig) {
     p.title.textContent = item.title || 'Untitled';
@@ -115,7 +183,7 @@ export function updateItemEl(el, item, ctx) {
   el.classList.toggle('selected', !!ctx.selected);
   // Text needs a squarer outline to stay inside: a bit with notes, a lot
   // when fully expanded (whole description shown). Morphs with a spring.
-  el._phys.setRoundness(item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
+  el._phys.setRoundness(container ? 0.16 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
 }
 
 export function positionEl(el, x, y, extra = '') {
