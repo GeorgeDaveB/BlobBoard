@@ -6,6 +6,7 @@
   cursor: pointer;
 }
 .item.dragging { cursor: grabbing; }
+.item-jelly { transform-origin: 50% 50%; }
 
 .item-body {
   position: relative;

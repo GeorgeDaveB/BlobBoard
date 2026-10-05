@@ -29,10 +29,17 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
   let rafPan = 0;
   let wheelTimer = 0;
 
+  // Tracks item sizes (for placement/fit) and bounces an item when its size
+  // changes, e.g. notes added. Runs after layout, before paint, so the bounce
+  // starts from the old size without a flash.
   const ro = new ResizeObserver(entries => {
     for (const en of entries) {
       const el = en.target;
-      sizes.set(el.dataset.id, { w: el.offsetWidth, h: el.offsetHeight });
+      const id = el.dataset.id;
+      const next = { w: el.offsetWidth, h: el.offsetHeight };
+      const prev = sizes.get(id);
+      sizes.set(id, next);
+      if (prev && (prev.w !== next.w || prev.h !== next.h) && el._jelly) el._jelly.resized(prev, next);
     }
   });
   // Pause animation for items off screen (battery).
@@ -92,7 +99,7 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
     const wp = screenToWorld(view, drag.px - r.left, drag.py - r.top);
     drag.x = Math.round(wp.x - drag.grabX);
     drag.y = Math.round(wp.y - drag.grabY);
-    positionEl(drag.el, drag.x, drag.y, ' rotate(2deg) scale(1.04)');
+    positionEl(drag.el, drag.x, drag.y);
   }
 
   function autoPanTick() {
@@ -113,6 +120,7 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
   function finishDrag() {
     cancelAnimationFrame(rafPan);
     const d = drag;
+    d.el._jelly.drop();
     d.el.classList.remove('dragging');
     boardEl.classList.remove('dragging-item');
     drag = null;
@@ -120,11 +128,15 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
   }
 
   attachGestures(boardEl, {
-    tapItem: id => store.select(id),
+    tapItem: id => {
+      const el = els.get(id);
+      if (el) el._jelly.poke(0.06);
+      store.select(id);
+    },
     contextItem: id => { store.select(id); onEdit(id); },
     holdStart: id => {
       const el = els.get(id);
-      if (el) el.classList.add('holding');
+      if (el) { el.classList.add('holding'); el._jelly.poke(-0.08); }
       if (navigator.vibrate) navigator.vibrate(15);
     },
     holdEnd: (id, released) => {
@@ -142,6 +154,8 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
       el.classList.add('dragging');
       el.style.zIndex = 1000000;
       boardEl.classList.add('dragging-item');
+      el._jelly.pickUp();
+      el._jelly.pointer(sx, sy, performance.now());
       store.select(id);
       rafPan = requestAnimationFrame(autoPanTick);
     },
@@ -149,6 +163,7 @@ export function createBoard({ host, store, onEdit, onCreateAt, onTapEmpty, onVie
       if (!drag) return;
       drag.px = cx;
       drag.py = cy;
+      drag.el._jelly.pointer(cx, cy, performance.now());
       updateDrag();
     },
     dragEnd: () => {

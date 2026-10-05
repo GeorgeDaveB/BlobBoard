@@ -1,8 +1,10 @@
 // Builds and updates one item on the board.
-// Structure: .item (position, moved by JS) > .item-body (shape + CSS animation).
-// Keeping them separate stops dragging and the animation fighting over `transform`.
+// Structure: .item (position, moved by JS) > .item-jelly (liquid physics, JS)
+// > .item-body (shape + CSS animation). Each layer owns its own `transform`,
+// so dragging, physics and the morph animation never fight each other.
 import { textColorFor } from '../services/color.js';
 import { seededRandom } from '../core/ids.js';
+import { createJelly } from './jelly.js';
 
 const MORPH_VARIANTS = 4;
 
@@ -33,9 +35,13 @@ export function createItemEl(item, { onEdit }) {
     onEdit(el.dataset.id);
   });
 
-  el.append(body, edit);
+  const jellyLayer = document.createElement('div');
+  jellyLayer.className = 'item-jelly';
+  jellyLayer.append(body);
+  el.append(jellyLayer, edit);
   applyMotion(body, item.seed);
   el._parts = { body, title, notes };
+  el._jelly = createJelly(jellyLayer);
   return el;
 }
 
