@@ -148,17 +148,6 @@ export function createStore({ repo, now = () => Date.now() }) {
       h.undo.push({ json: JSON.stringify(canvases.get(canvasId)), key: null });
       replaceDoc(canvasId, entry.json);
       return true;
-    },
-
-    // Throws away the session `key` entirely (no redo), e.g. a new item that
-    // was closed while still empty. Only works if it is the latest step.
-    cancelSession(key, canvasId = ui.canvasId) {
-      const h = hist(canvasId);
-      const top = h.undo[h.undo.length - 1];
-      if (!key || !top || top.key !== key) return false;
-      h.undo.pop();
-      replaceDoc(canvasId, top.json);
-      return true;
     }
   };
 

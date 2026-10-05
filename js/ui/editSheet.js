@@ -114,18 +114,15 @@ export function createEditSheet({ host, store, onRequestClose, onDelete }) {
       if (isNew) title.focus({ preventScroll: true });
     },
 
-    // Called when the sheet closes. A new item left empty is discarded.
+    // Called when the sheet closes. A new item always stays, even untitled;
+    // only Delete or Undo removes it.
     close() {
       if (itemId === null) return;
-      const it = store.item(itemId);
-      const discard = isNew && it && !it.title.trim() && !it.notes.trim();
-      const sessionKey = key;
       if (document.activeElement && sheet.contains(document.activeElement)) document.activeElement.blur();
       sheet.classList.remove('open');
       itemId = null;
       key = null;
       isNew = false;
-      if (discard) store.cancelSession(sessionKey);
     },
 
     // Re-reads the item after undo/redo; returns false if it no longer exists.

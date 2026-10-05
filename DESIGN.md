@@ -77,6 +77,10 @@ Numbered so the build phases and tests can refer to them.
 - **R22** Tap a line → a + / − button at each end adds or removes the arrowhead at that end.
 - **R23** When an item moves into a group, its lines are removed. Lines only connect items on the same board.
 
+**Selection**
+- **R24** Select several items at once by dragging a selection box over an area (like selecting icons on a desktop), then move them together by dragging any one of them.
+- **R25** A new item stays from the moment it's created, even untitled (several items may share the name "Untitled"). Only Delete or Undo removes it.
+
 ---
 
 ## 3. Choices I made that you haven't confirmed
@@ -97,6 +101,7 @@ Please check these. Each one is easy to change now and harder later.
 | **C10** | Long-press is decided **on release**: hold then release without moving = edit; hold then move = drag. The phone vibrates lightly when the hold registers. | Stops the editor opening when you just paused before dragging. |
 | **C11** | The PNG picture shows **the board you're looking at**, with groups collapsed. | Predictable output. Open trays could cover other items in a picture. |
 | **C12** | **Duplicate into canvas**: into the *same* canvas → placed next to the original on the same board. Into *another* canvas → its top level, near the middle. | The most likely intent in each case. |
+| **C13** ⏳ *to confirm* | **Selection box gesture.** PC: left-drag on empty space draws the box (like the desktop). Panning on PC then moves to the mouse wheel / two-finger touchpad scroll, middle-button drag, or Space + drag. Phone: one-finger drag still pans; **long-press on empty space, then drag** draws the box. | On a phone, one finger can't both pan and draw a box, so the box needs the hold first. On PC this matches how desktops work, but it changes today's "drag empty space to pan". |
 
 ---
 
@@ -373,6 +378,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 ```
 
 - Distances are in screen pixels, so it feels the same at any zoom.
+- Phase 3b adds a **selecting** state: from `emptyPress` it starts on mouse-drag (PC) or after the 500 ms hold (touch); from then on moving the pointer resizes the box.
 - Stops the browser interfering: no page scrolling, no pull-to-refresh, no double-tap zoom, no text selection, no Android long-press menu on the board.
 
 **`ui/dragDrop.js` — where a dragged item lands (R14, R17, R18)**
@@ -387,6 +393,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 - Bottom sheet on phone, side panel on PC. Fields: title, notes, tags, colour, thumbnail, done.
 - Actions: Open inside ⤢, Duplicate to canvas…, Move to canvas…, Delete.
 - Changes apply live (you see the item update behind the sheet); one undo step per opening.
+- A new item stays when the editor closes, even if untitled (R25).
 - Stays above the Android keyboard: the page resizes for the keyboard and the focused field scrolls into view.
 
 **`ui/tagPicker.js` — tags (R10, R11)**
@@ -413,6 +420,15 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 ---
 
+### 8.7 Multi-select (phase 3b)
+
+- **`ui/selection.js`** — the selection box (a dashed, softly tinted rounded rectangle drawn in screen space), hit-testing items against it (an item is selected if the box *touches* its outline, like Windows), and the selected-set in the store's screen state (`ui.selectedIds`). Shows a small bar: "3 selected · Delete · ✕".
+- **Moving many:** dragging any selected item moves all of them, keeping their spacing. Each gets the liquid "air" physics. On drop, all moved items are treated as fixed and only *other* blobs are pushed aside (`resolveOverlaps` takes a set of fixed ids). One undo step.
+- **Dropping many onto an item** (held 0.5 s) puts them all inside it; each one's lines are removed (R23). Dropping many onto a breadcrumb moves them all to that level.
+- **Delete** (key or bar button) removes all selected items, asking first if any of them has items inside. One undo step.
+- **Store actions:** `moveItems` (exists), plus `reparentItems` and `deleteItems` (batch versions, one undo step each).
+- **Limits:** only items on the board you're viewing can be box-selected (not minis inside a tray). ✎ and ⤢ are hidden while more than one item is selected. Tap empty space or Esc clears the selection.
+
 ## 9. Interaction spec
 
 | Where | PC | Phone | Result |
@@ -431,6 +447,9 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 | Empty board | Ctrl + wheel / touchpad pinch | two-finger pinch | zoom (20%–250%) |
 | Empty board | double-click | double-tap | new item there |
 | Empty board | click | tap | deselect, collapse the tray |
+| Empty board | left-drag (C13) | long-press, then drag | selection box: every item it touches gets selected |
+| Item | Ctrl/Shift + click | — | add / remove that item from the selection |
+| Any selected item | drag | drag | all selected items move together |
 | + button | click | tap | new item in the middle of the screen |
 | Back | Esc | Android back | close sheet → collapse tray → up one level → (exit) |
 | Keyboard | Ctrl+Z / Ctrl+Y undo/redo · Delete removes the selected line or item · Enter edits the selected item | | |
@@ -592,6 +611,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 1 Board basics | model, store, device database, pan/zoom, animated blobs, create/edit (title, notes, colour picker, done), move, undo | items survive a reload; tests pass |
 | 2 Groups | drag-hold-into, mini shapes + badge, trays (nested), drag out, ⤢ inside boards, breadcrumb + drops, back button | R14–R18 checklist passes |
 | 3 Lines | connect dot, lines, select, + / − arrows, × delete, removal on regrouping | R21–R23 pass |
+| 3b Multi-select | selection box (PC drag / phone long-press + drag), Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
 | 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
 | 5 Tags | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
@@ -618,4 +638,4 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 
 ## 17. Not in v1 (possible later)
 
-Selecting several items at once · search · due dates / reminders · sharing with other people or live collaboration · dark mode (colours are set up as tokens to make this easy) · picking a whole folder of pictures · uploading from a closed app (Background Sync) · reordering items inside a tray · lines between different levels · iPhone testing.
+Search · due dates / reminders · sharing with other people or live collaboration · dark mode (colours are set up as tokens to make this easy) · picking a whole folder of pictures · uploading from a closed app (Background Sync) · reordering items inside a tray · lines between different levels · iPhone testing.

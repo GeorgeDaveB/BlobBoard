@@ -37,13 +37,13 @@ export const tests = {
     assertEqual(store.canUndo(), false);
   },
 
-  'cancelSession discards a new empty item without leaving a redo': () => {
+  'a new untitled item stays after its editor session; undo removes it': () => {
     const { store } = setup();
-    store.createItem({}, { coalesce: 'k2' });
-    assert(store.cancelSession('k2'));
+    const id = store.createItem({}, { coalesce: 'k2' });
+    assertEqual(store.item(id).title, '');
+    assertEqual(count(store), 1);
+    store.undo();
     assertEqual(count(store), 0);
-    assertEqual(store.canRedo(), false);
-    assertEqual(store.cancelSession('other'), false);
   },
 
   'no-op changes record nothing': () => {
