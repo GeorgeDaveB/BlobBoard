@@ -1,7 +1,7 @@
 import { assert, assertEqual } from './runner.js';
 import { createStore } from '../js/core/store.js';
-import { newCanvas, linkProblem, linkBetween, sanitizeCanvas } from '../js/core/model.js';
-import { edgeDistance, edgeToward, strandGeometry, restMid, midWidth, STRAND } from '../js/services/strand.js';
+import { newCanvas, linkProblem, linkBetween, sanitizeCanvas, lineLook, applyLinkPatch } from '../js/core/model.js';
+import { edgeDistance, edgeToward, strandGeometry, restMid, midWidth, inside, STRAND } from '../js/services/strand.js';
 
 function setup() {
   let t = 1000;
@@ -79,12 +79,41 @@ export const tests = {
     assertEqual(Object.keys(store.canvas().links).length, 0);
   },
 
-  'link: sanitize keeps arrows as booleans': () => {
+  'link: sanitize keeps arrows as booleans and repairs look/label': () => {
     const { store, a, b } = setup();
     const doc = JSON.parse(JSON.stringify(store.canvas()));
-    doc.links.x = { from: a, to: b, arrowFrom: 'yes', arrowTo: 1 };
+    doc.links.x = { from: a, to: b, arrowFrom: 'yes', arrowTo: 1, style: 'zigzag', color: 'blue', label: 42 };
+    doc.links.y = { from: b, to: store.createItem({}), style: 'straight', color: '#123456', label: 'needs' };
+    doc.settings.lineStyle = 'x';
     sanitizeCanvas(doc);
     assertEqual([doc.links.x.arrowFrom, doc.links.x.arrowTo], [false, false]);
+    assertEqual([doc.links.x.style, doc.links.x.color, doc.links.x.label], [null, null, '']);
+    assertEqual(doc.settings.lineStyle, 'goo');
+    assertEqual(doc.settings.lineColor, 'gradient');
+  },
+
+  'link look: line overrides the canvas default; colours resolve from the blobs': () => {
+    const set = { lineStyle: 'straight', lineColor: 'start' };
+    assertEqual(lineLook({ style: null, color: null }, set, '#aa0000', '#00bb00'), { style: 'straight', c0: '#aa0000', c1: '#aa0000' });
+    assertEqual(lineLook({ style: 'goo', color: 'end' }, set, '#aa0000', '#00bb00'), { style: 'goo', c0: '#00bb00', c1: '#00bb00' });
+    assertEqual(lineLook({ color: 'gradient' }, set, '#aa0000', '#00bb00'), { style: 'straight', c0: '#aa0000', c1: '#00bb00' });
+    assertEqual(lineLook({ color: '#123456' }, {}, '#aa0000', '#00bb00'), { style: 'goo', c0: '#123456', c1: '#123456' });
+  },
+
+  'link edit: style/colour/label change in one undo step per session; bad values ignored': () => {
+    const { store, a, b } = setup();
+    const id = store.createLink(a, b);
+    store.updateLink(id, { label: 'blocks' }, { coalesce: 's1' });
+    store.updateLink(id, { style: 'straight' }, { coalesce: 's1' });
+    store.updateLink(id, { color: '#ff0000' }, { coalesce: 's1' });
+    store.updateLink(id, { color: 'purple', style: 'wavy' }, { coalesce: 's1' });
+    const ln = store.link(id);
+    assertEqual([ln.label, ln.style, ln.color], ['blocks', 'straight', '#ff0000']);
+    store.undo();
+    assertEqual([store.link(id).label, store.link(id).style, store.link(id).color], ['', null, null]);
+    const x = { label: '' };
+    applyLinkPatch(x, { label: 'y'.repeat(200) });
+    assertEqual(x.label.length, 80, 'label capped');
   },
 
   'strand: edge of a blob is the ellipse; a container is squarer': () => {
@@ -110,7 +139,7 @@ export const tests = {
     const s = strandGeometry(A, B, mid, { to: true });
     const onEdge = (p, c) => near(((p.x - c.cx) / c.a) ** 2 + ((p.y - c.cy) / c.b) ** 2, 1, 1e-6);
     assert(s && onEdge(s.a, A) && onEdge(s.b, B), 'ends on the outlines');
-    assert(s.a.x > 50 && s.b.x < 350 && s.a.y > 0, 'facing each other, slightly down');
+    assert(near(s.a.x, 60) && near(s.b.x, 340), 'edges face each other on the centre line');
     assertEqual((s.arrows.match(/Z/g) || []).length, 1, 'one arrowhead');
     const none = strandGeometry(A, B, mid, {});
     assertEqual(none.arrows, '');
@@ -121,6 +150,27 @@ export const tests = {
   'strand: nothing drawn when the blobs overlap': () => {
     const s = strandGeometry(blob(0, 0), blob(50, 0), restMid(blob(0, 0), blob(50, 0)));
     assertEqual(s, null);
+  },
+
+  'strand: never folds back into a big blob (resting middle sits between the edges)': () => {
+    const big = { cx: 0, cy: 0, a: 300, b: 220, rd: 1 };
+    const small = { cx: 60, cy: -330, a: 50, b: 40, rd: 1 };
+    const m = restMid(big, small);
+    assert(!inside(big, m) && !inside(small, m), 'middle outside both');
+    const s = strandGeometry(big, small, m, { to: true });
+    for (let t = 0.1; t <= 0.9; t += 0.1) assert(!inside(big, s.at(t)), 'point at t=' + t.toFixed(1) + ' inside the big blob');
+    // A middle that swung inside the big blob is ignored.
+    const s2 = strandGeometry(big, small, { x: 0, y: 0 }, { to: true });
+    assert(!inside(big, s2.at(0.5)), 'swung-in middle falls back');
+  },
+
+  'strand: straight style is a thin straight line with a small arrowhead': () => {
+    const A = blob(0, 0), B = blob(400, 100);
+    const s = strandGeometry(A, B, { x: 0, y: 999 }, { to: true }, 'straight');
+    const mid = s.at(0.5);
+    assert(near(mid.x, (s.a.x + s.b.x) / 2, 0.01) && near(mid.y, (s.a.y + s.b.y) / 2, 0.01), 'ignores the sprung middle');
+    assertEqual(s.wMid, STRAND.straightWidth);
+    assertEqual((s.arrows.match(/Z/g) || []).length, 1);
   },
 
   'strand: to a point (drawing a new line) ends at the point': () => {

@@ -16,7 +16,7 @@ const EDGE_SPEED = 14;  // max auto-pan speed (px per frame)
 const DOT = 24;         // background dot spacing at zoom 1
 const ARM_MS = 500;     // hold over a blob this long to drop *into* it
 
-export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreateAt, onTapEmpty, onViewChange, onDeleteLink }) {
+export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreateAt, onTapEmpty, onViewChange, onDeleteLink, onEditLink }) {
   const boardEl = document.createElement('div');
   boardEl.className = 'board';
   const world = document.createElement('div');
@@ -114,7 +114,8 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     geom,
     color: id => (store.item(id) ? store.item(id).color : '#999'),
     onToggleArrow: (id, end) => store.toggleArrow(id, end),
-    onDelete: id => (onDeleteLink ? onDeleteLink(id) : store.deleteLink(id))
+    onDelete: id => (onDeleteLink ? onDeleteLink(id) : store.deleteLink(id)),
+    onEdit: id => { if (onEditLink) onEditLink(id); }
   });
 
   function applyView() {
@@ -627,7 +628,11 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       }
     },
     linkCancel: () => linkStop(),
-    tapLine: id => store.selectLink(id),
+    // Tap selects a line; tapping the selected line again opens its editor.
+    tapLine: id => {
+      if (store.ui.selectedLinkId === id && onEditLink) onEditLink(id);
+      else store.selectLink(id);
+    },
     // Tap selects; tapping the selected item again (or a quick double
     // click) expands it fully, and once more collapses it.
     tapItem: id => {

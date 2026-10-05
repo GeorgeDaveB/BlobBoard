@@ -1,12 +1,20 @@
-// Geometry of a "gooey string" line between two blobs (R21). Pure math, no
-// DOM, so the board and (later) the PNG export draw it the same way.
+// Geometry of a line between two blobs (R21). Pure math, no DOM, so the
+// board and (later) the PNG export draw it the same way.
 //
 // A shape is { cx, cy, a, b, rd }: centre, half-width, half-height and
 // roundness (1 = blob/ellipse, lower = rounded rectangle, e.g. an open
-// container). The string is a quadratic curve from edge to edge through a
-// control point C that lags behind when blobs move (the caller springs it).
-// It is thick where it leaves a blob and thin in the middle, and the longer
-// it is, the thinner it gets, like a strand of slime being pulled apart.
+// container). A point (while drawing a new line) has a = b = 0.
+//
+// Two styles:
+//  'goo'      — a "gooey string": a quadratic curve through a middle point
+//               that lags behind when blobs move (the caller springs it),
+//               thick where it leaves a blob, thin in the middle, thinner
+//               the longer it is pulled, hanging slightly.
+//  'straight' — a thin straight arrow from edge to edge; no physics.
+//
+// Ends sit on the line between the two centres, and the resting middle is
+// halfway between the two EDGES (not the centres), so the curve can never
+// bend back into a big blob.
 
 export const STRAND = {
   endWidth: 16,       // max width where it leaves a blob
@@ -18,18 +26,22 @@ export const STRAND = {
   arrowHalf: 10,
   sag: 0.07,          // hangs down by this fraction of its length…
   maxSag: 22,         // …up to this many px
-  samples: 16
+  samples: 16,
+  straightWidth: 2.6,
+  straightArrowLen: 13,
+  straightArrowHalf: 7
 };
 
 // Distance from the centre to the outline in direction (ux, uy). A
 // superellipse: exponent 2 = ellipse, higher = squarer (rounded rectangle).
 export function edgeDistance(s, ux, uy) {
+  if (!(s.a > 0) || !(s.b > 0)) return 0;
   const p = 2 + (1 - Math.max(0, Math.min(1, s.rd == null ? 1 : s.rd))) * 6;
   const v = Math.pow(Math.abs(ux) / s.a, p) + Math.pow(Math.abs(uy) / s.b, p);
   return v > 0 ? Math.pow(v, -1 / p) : 0;
 }
 
-// Point on A's outline facing (tx, ty).
+// Point on the outline of s facing (tx, ty).
 export function edgeToward(s, tx, ty) {
   let dx = tx - s.cx, dy = ty - s.cy;
   const d = Math.hypot(dx, dy) || 1e-6;
@@ -38,10 +50,26 @@ export function edgeToward(s, tx, ty) {
   return { x: s.cx + dx * r, y: s.cy + dy * r, ux: dx, uy: dy };
 }
 
-// Where the middle of the string wants to rest: halfway, hanging a little.
-export function restMid(A, B) {
-  const len = Math.hypot(B.cx - A.cx, B.cy - A.cy);
-  return { x: (A.cx + B.cx) / 2, y: (A.cy + B.cy) / 2 + Math.min(STRAND.maxSag, len * STRAND.sag) };
+// The two facing edge points (on the line between the centres).
+export function edges(A, B) {
+  return { ea: edgeToward(A, B.cx, B.cy), eb: edgeToward(B, A.cx, A.cy) };
+}
+
+// Where the middle of the line rests: halfway between the edges, hanging
+// a little (goo) or not at all (straight).
+export function restMid(A, B, style = 'goo') {
+  const { ea, eb } = edges(A, B);
+  const len = Math.hypot(eb.x - ea.x, eb.y - ea.y);
+  const sag = style === 'straight' ? 0 : Math.min(STRAND.maxSag, len * STRAND.sag);
+  return { x: (ea.x + eb.x) / 2, y: (ea.y + eb.y) / 2 + sag };
+}
+
+// Is point p inside shape s (with a few px of margin)?
+export function inside(s, p) {
+  const dx = p.x - s.cx, dy = p.y - s.cy;
+  const d = Math.hypot(dx, dy);
+  if (!(s.a > 0) || d < 1e-6) return s.a > 0;
+  return d < edgeDistance(s, dx / d, dy / d) + 4;
 }
 
 const quad = (p0, c, p1, t) => {
@@ -52,59 +80,66 @@ const quadTangent = (p0, c, p1, t) => ({
   x: 2 * (1 - t) * (c.x - p0.x) + 2 * t * (p1.x - c.x),
   y: 2 * (1 - t) * (c.y - p0.y) + 2 * t * (p1.y - c.y)
 });
+const unit = v => { const m = Math.hypot(v.x, v.y) || 1; return { x: v.x / m, y: v.y / m }; };
+const f = n => Math.round(n * 10) / 10;
 
-// Middle width for a string of this length (thinner when longer).
+// Middle width of a gooey string of this length (thinner when longer).
 export function midWidth(len) {
   const S = STRAND;
   return Math.max(S.minMidWidth, Math.min(S.midWidth, S.midWidth * S.thinAt / Math.max(1, len)));
 }
 
-// A, B: shapes (B may be a point { cx, cy, a: 0, b: 0 } while drawing a new
-// line). mid: the (sprung) middle point. Returns null when the blobs overlap
-// too much to show a string, else:
-//   d      — filled outline of the string
+// A, B: shapes. mid: the (sprung) middle point (ignored for 'straight').
+// arrows: { from, to }. Returns null when the blobs overlap too much to show
+// a line, else:
+//   d      — filled outline of the line
 //   arrows — filled arrowheads ('' if none; a separate shape so the overlap
-//            with the string doesn't cancel out)
-//   spine  — centre curve 'M … Q …' (for the wide invisible tap target)
+//            with the line doesn't cancel out)
+//   spine  — centre curve (for the wide invisible tap target)
 //   at(t)  — point on the centre curve, t = 0 at A's edge … 1 at B's edge
 //   len    — edge-to-edge length
-export function strandGeometry(A, B, mid, arrows = {}) {
+export function strandGeometry(A, B, mid, arrows = {}, style = 'goo') {
   const S = STRAND;
-  // Control point so the curve passes through `mid` halfway.
-  const c = { x: 2 * mid.x - (A.cx + B.cx) / 2, y: 2 * mid.y - (A.cy + B.cy) / 2 };
-  const ea = A.a > 0 ? edgeToward(A, c.x, c.y) : { x: A.cx, y: A.cy };
-  const eb = B.a > 0 ? edgeToward(B, c.x, c.y) : { x: B.cx, y: B.cy };
+  const straight = style === 'straight';
+  const { ea, eb } = edges(A, B);
   const len = Math.hypot(eb.x - ea.x, eb.y - ea.y);
   // Edges crossing (blobs overlapping): nothing sensible to draw.
   const facing = (eb.x - ea.x) * (B.cx - A.cx) + (eb.y - ea.y) * (B.cy - A.cy);
   if (len < 6 || facing <= 0) return null;
 
-  const wEnd = Math.min(S.endWidth, Math.max(6, len * 0.25));
-  const wMid = Math.min(midWidth(len), wEnd);
-  const unit = (v) => { const m = Math.hypot(v.x, v.y) || 1; return { x: v.x / m, y: v.y / m }; };
+  // Control point so the curve passes through `mid` halfway.
+  // A middle that has swung inside either blob would make the curve fold
+  // back into it, so it falls back to the resting middle.
+  const m = straight ? { x: (ea.x + eb.x) / 2, y: (ea.y + eb.y) / 2 }
+    : inside(A, mid) || inside(B, mid) ? restMid(A, B) : mid;
+  const c = { x: 2 * m.x - (ea.x + eb.x) / 2, y: 2 * m.y - (ea.y + eb.y) / 2 };
+
+  const wEnd = straight ? S.straightWidth : Math.min(S.endWidth, Math.max(6, len * 0.25));
+  const wMid = straight ? S.straightWidth : Math.min(midWidth(len), wEnd);
   const dirA = unit({ x: ea.x - c.x, y: ea.y - c.y }); // pointing into A
   const dirB = unit({ x: eb.x - c.x, y: eb.y - c.y }); // pointing into B
-  const arrowLen = Math.min(S.arrowLen, len * 0.35);
-  const arrowHalf = Math.max(S.arrowHalf, wEnd * 0.6);
+  const arrowLen = Math.min(straight ? S.straightArrowLen : S.arrowLen, len * 0.35);
+  const arrowHalf = straight ? S.straightArrowHalf : Math.max(S.arrowHalf, wEnd * 0.6);
+  const inset = straight ? 0 : S.inset;
 
-  // String ends: tucked under the blob, or at the back of an arrowhead.
+  // Line ends: tucked under the blob, or at the back of an arrowhead.
   const endAt = (e, dir, arrow, isBlob) => arrow
     ? { x: e.x - dir.x * (arrowLen - 2), y: e.y - dir.y * (arrowLen - 2) }
-    : isBlob ? { x: e.x + dir.x * S.inset, y: e.y + dir.y * S.inset } : { x: e.x, y: e.y };
+    : isBlob ? { x: e.x + dir.x * inset, y: e.y + dir.y * inset } : { x: e.x, y: e.y };
   const sa = endAt(ea, dirA, arrows.from, A.a > 0);
   const sb = endAt(eb, dirB, arrows.to, B.a > 0);
 
   const left = [], right = [];
-  for (let i = 0; i <= S.samples; i++) {
-    const t = i / S.samples;
+  const n = straight ? 1 : S.samples;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
     const p = quad(sa, c, sb, t);
     const tg = unit(quadTangent(sa, c, sb, t));
     const k = Math.abs(2 * t - 1);
     const w = (wMid + (wEnd - wMid) * k * k * k) / 2;
-    left.push(p.x + -tg.y * w, p.y + tg.x * w);
-    right.push(p.x - -tg.y * w, p.y - tg.x * w);
+    left.push(p.x - tg.y * w, p.y + tg.x * w);
+    right.push(p.x + tg.y * w, p.y - tg.x * w);
   }
-  const f = n => Math.round(n * 10) / 10;
   let d = 'M' + f(left[0]) + ' ' + f(left[1]);
   for (let i = 2; i < left.length; i += 2) d += 'L' + f(left[i]) + ' ' + f(left[i + 1]);
   for (let i = right.length - 2; i >= 0; i -= 2) d += 'L' + f(right[i]) + ' ' + f(right[i + 1]);

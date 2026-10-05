@@ -61,7 +61,7 @@ export function attachGestures(surface, h) {
     start = { x: e.clientX, y: e.clientY, id: e.pointerId };
     last = { x: e.clientX, y: e.clientY };
     const itemEl = e.target.closest('.item');
-    const hitLine = e.target.closest('.link-hit');
+    const hitLine = e.target.closest('.link-hit, .link-label');
     if (dot && itemEl) {
       itemId = itemEl.dataset.id;
       mode = 'link';

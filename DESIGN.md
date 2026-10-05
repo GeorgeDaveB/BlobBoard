@@ -78,9 +78,15 @@ Numbered so the build phases and tests can refer to them.
 - **R20** Duplicate an item into a canvas (any canvas, including the current one) with everything inside it, all its text included. Also "Move to canvas…".
 
 **Links**
-- **R21** Connect two items with a line by dragging from the **connect handle** (top-left of the blob: a small dot-and-arrow icon; on hover on PC, on the selected blob on phone) onto another blob. A new line has an **arrowhead at the end you dragged to**. Lines are **"gooey strings"**: thick where they leave a blob, thinner in the middle and thinner the longer they're pulled, hanging slightly, bending and wobbling as their blobs move; coloured as a fade from one blob's colour to the other's. Lines **follow the edge of an open blob** (tray or container view).
+- **R21** Connect two items with a line by dragging from the **connect handle** (top-left of the blob: a thin black arrow icon ↗; on hover on PC, on the selected blob on phone) onto another blob. A new line has an **arrowhead at the end you dragged to**. Lines are **"gooey strings"**: thick where they leave a blob, thinner in the middle and thinner the longer they're pulled, hanging slightly, bending and wobbling as their blobs move; coloured as a fade from one blob's colour to the other's. Lines **follow the edge of an open blob** (tray or container view).
 - **R22** Tap a line → a + / − button at each end adds or removes the arrowhead at that end.
 - **R23** When an item moves into a group, its lines are removed. Lines only connect items on the same board.
+- **R31** Line **look and text** (owner, 2026-10-05):
+  - **Style:** *Gooey* (the rubber string) or *Straight* (a thin straight arrow that just points at the other blob, no physics).
+  - **Colour:** *Gradient* (start blob's colour fading to the end blob's), *Start blob* (the colour of the blob it comes from), *End blob* (the colour of the blob it points to), or *Custom* (8 swatches + picker).
+  - Both have a **per-canvas default in ⚙** ("Lines"), and **each line can override** them in its own editor ("Default" = follow the canvas).
+  - **Text on a line:** up to 80 characters, shown exactly at the line's middle in a pill with a white border, filled with the line's colours (gradient left→right as drawn); text colour picked automatically for contrast. Labels sit above blobs, below open trays and a dragged blob.
+  - **Line editor:** tap a line to select it (+ / − at the ends, ✎ and × beside the middle); tap the selected line (or its label) again, or ✎, to open it: text, style, colour, Delete. One opening = one undo step.
 
 **Selection**
 - **R24** Select several items at once by dragging a selection box over an area (like selecting icons on a desktop), then move them together by dragging any one of them.
@@ -106,7 +112,7 @@ Please check these. Each one is easy to change now and harder later.
 | **C10** | Long-press is decided **on release**: hold then release without moving = edit; hold then move = drag. The phone vibrates lightly when the hold registers. | Stops the editor opening when you just paused before dragging. |
 | **C11** | The PNG picture shows **the board you're looking at**, with groups collapsed. | Predictable output. Open trays could cover other items in a picture. |
 | **C12** | **Duplicate into canvas**: into the *same* canvas → placed next to the original on the same board. Into *another* canvas → its top level, near the middle. | The most likely intent in each case. |
-| **C14** | Line details not specified by you: the connect handle sits **top-left** (✎ is top-right) and shows a dot-with-arrow icon (a plain dot wasn't recognisable); a line's colour fades **from one blob's colour to the other's**; tapping the dot without dragging shows a hint; dropping a line on an inner (mini) blob or on an already-connected blob shows a short message; deleting a line shows an **Undo** toast (like items). | Decided while building phase 3; easy to change. |
+| **C14** | Line details not specified by you: the connect handle sits **top-left** (✎ is top-right) and shows a thin black arrow icon (owner request; a plain dot wasn't recognisable); a line's colour fades **from one blob's colour to the other's**; tapping the dot without dragging shows a hint; dropping a line on an inner (mini) blob or on an already-connected blob shows a short message; deleting a line shows an **Undo** toast (like items). | Decided while building phase 3; easy to change. |
 | **C13** | **Pan / Select mode button** (top bar, ✋ / ⬚; PC shortcuts **H** / **V**; remembered per device). The mode only changes what dragging **empty space** does: Pan mode moves the board, Select mode draws the selection box. Blobs can be dragged in both modes; pinch and the mouse wheel always pan/zoom. Same on PC and phone. | Chosen by you (option A): one simple rule, nothing is lost in either mode. |
 
 ---
@@ -202,9 +208,12 @@ Please check these. Each one is easy to change now and harder later.
 |---|---|
 | id, from, to | item ids; both items must have the same parent (same board) |
 | arrowFrom, arrowTo | booleans: arrowhead at the `from` end / at the `to` end |
+| style | `null` (canvas default) · `'goo'` · `'straight'` (R31) |
+| color | `null` (canvas default) · `'gradient'` · `'start'` · `'end'` · `'#rrggbb'` (R31) |
+| label | text shown at the middle, max 80 characters, `''` = none (R31) |
 | createdAt, updatedAt | |
 
-Only one link per pair of items.
+Only one link per pair of items. Canvas `settings` also hold `lineStyle` ('goo') and `lineColor` ('gradient'), the defaults for lines whose `style`/`color` is `null`.
 
 ### 6.4 Shared across all canvases
 
@@ -373,7 +382,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 **`ui/linksLayer.js` — lines (R21–R23)** *(as built)*
 - SVG layer under the items. Each line = a filled "gooey string" path + an arrowheads path (separate, so overlaps don't cancel) + an invisible 22 px (screen) wide centre line for tapping. Colour: linear gradient between the two blobs' colours; group opacity .92.
-- Shape (`services/strand.js`): quadratic curve between the blobs' edges (superellipse edge: ellipse for blobs, squarer for open containers). Its middle is a damped spring that rests halfway, hanging down 7% of the length (max 22 px), so it lags and wobbles when blobs move. Width 16 px where it leaves a blob (tucked 8 px under the edge), middle 8 px, thinning past 140 px of length down to 2.4 px. Arrowhead 16 × 20 px, tip on the edge.
+- Shape (`services/strand.js`): ends on the line between the two centres; the resting middle is halfway between the two **edges** (fix 2026-10-05: resting between the centres made the string fold back into big blobs), and a middle that swings inside a blob falls back to rest. Quadratic curve between the blobs' edges (superellipse edge: ellipse for blobs, squarer for open containers). Its middle is a damped spring that rests halfway, hanging down 7% of the length (max 22 px), so it lags and wobbles when blobs move. Width 16 px where it leaves a blob (tucked 8 px under the edge), middle 8 px, thinning past 140 px of length down to 2.4 px. Arrowhead 16 × 20 px, tip on the edge.
 - Updated from the physics frame loop (`onFrame`); positions come from the store (or the live drag), sizes from the measured body, plus each blob's physics offset/squash (`visual()`). Paths are only rewritten when they change.
 - Selected line: white edge, **+** / **−** near each end, **×** in the middle (HTML buttons above the items, constant screen size).
 - Drawing: a temporary string follows the finger from the ● dot; it snaps onto a valid target (white edge on the target), turns grey over an invalid one.

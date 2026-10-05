@@ -1,6 +1,6 @@
 // The single source of truth in memory. Only these actions change data, so
 // every change is saved, (later) synced and undoable the same way.
-import { newItem, newLink, linkProblem, applyItemPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
+import { newItem, newLink, linkProblem, applyItemPatch, applyLinkPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
 import { createEmitter } from './events.js';
 
 export const UNDO_LIMIT = 50;
@@ -276,6 +276,16 @@ export function createStore({ repo, now = () => Date.now() }) {
         if (!ln || (end !== 'from' && end !== 'to')) return false;
         const k = end === 'from' ? 'arrowFrom' : 'arrowTo';
         ln[k] = !ln[k];
+        ln.updatedAt = t;
+      });
+    },
+
+    // Style / colour / label of one line. opts.coalesce: one undo step per
+    // editor session.
+    updateLink(linkId, patch, opts = {}) {
+      return commit(opts.coalesce, (doc, t) => {
+        const ln = doc.links[linkId];
+        if (!ln || !applyLinkPatch(ln, patch)) return false;
         ln.updatedAt = t;
       });
     },

@@ -59,6 +59,8 @@
   pointer-events: stroke;
   cursor: pointer;
 }
+/* Straight style: thin, crisp, a bit more opaque. */
+.link.straight { opacity: 1; }
 .link.temp { pointer-events: none; }
 .link.temp { opacity: .8; }
 .link.temp.bad { opacity: .45; }
@@ -86,6 +88,32 @@
   transform: scale(max(min(calc(1 / var(--z, 1)), 1.18), calc(.6 / var(--z, 1))));
 }
 .link-del { color: var(--danger); }
+.link-edit { font-size: 15px; }
+
+/* Text on a line: a pill at its exact middle, filled with the line's
+   colours, white border. Above blobs, below open trays (z 900000) and the
+   dragged blob (z 1000000). */
+.link-labels { position: absolute; left: 0; top: 0; z-index: 899999; }
+.link-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 180px;
+  padding: 3px 10px;
+  border: 2px solid #fff;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 4px rgba(40, 30, 20, .18);
+  cursor: pointer;
+  width: max-content;
+}
+.link-label.selected { box-shadow: 0 0 0 2px rgba(40, 30, 20, .35), 0 2px 8px rgba(40, 30, 20, .25); }
+.link-label[hidden] { display: none; }
 @media (pointer: coarse) {
   .link-ctl { width: 40px; height: 40px; margin: -20px 0 0 -20px; }
 }

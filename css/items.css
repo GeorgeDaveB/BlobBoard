@@ -374,12 +374,11 @@
 .item.mini > .item-ctl { zoom: 1.5; }
 .item.dragging > .item-ctl, .item.ghost > .item-ctl { opacity: 0; }
 
-/* ---- ● connect dot, top-left (R21) ----
+/* ---- connect handle (thin arrow), top-left (R21) ----
    Drag it onto another blob on the board to draw a line. Not on minis. */
 .item-link { left: -6px; }
 .item-link { cursor: crosshair; }
-.item-link > svg { width: 20px; height: 20px; fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.item-link > svg > .dot { fill: var(--lc, var(--accent)); stroke: var(--ink); stroke-width: 1.4; }
+.item-link > svg { width: 18px; height: 18px; fill: none; stroke: #111; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 @media (pointer: coarse) { .item-link { left: -10px; } }
 .item.mini > .item-link, .item.ghost > .item-link { display: none; }
 .item.link-target > .item-jelly > .item-body { box-shadow: 0 0 0 4px #fff, 0 4px 16px rgba(40, 30, 20, .22); }

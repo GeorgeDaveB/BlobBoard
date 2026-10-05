@@ -3,6 +3,7 @@
 // per item inside it (R30). Also shows the app version.
 import { APP_VERSION } from '../version.js';
 import { MAX_GROW } from './itemView.js';
+import { createLineLookFields } from './lineLookFields.js';
 
 let sliderSeq = 0;
 const OPTIONS = [
@@ -88,11 +89,23 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
   });
   slider.addEventListener('change', () => { sliderKey = null; });
 
+  // Default look of lines on this canvas (each line can override it).
+  const linesTitle = document.createElement('div');
+  linesTitle.className = 'field-label settings-section';
+  linesTitle.textContent = 'Lines (default for this canvas)';
+  const lineLook = createLineLookFields({
+    withDefault: false,
+    onChange: patch => {
+      if ('style' in patch) store.setCanvasSetting('lineStyle', patch.style);
+      if ('color' in patch) store.setCanvasSetting('lineColor', patch.color, { coalesce: 'lineColor:' + sliderSeq });
+    }
+  });
+
   const note = document.createElement('p');
   note.className = 'settings-note';
   note.textContent = 'Saved with this canvas. · Version ' + APP_VERSION;
 
-  box.append(head, group, grow, note);
+  box.append(head, group, grow, linesTitle, lineLook.el, note);
   back.append(box);
   host.append(back);
 
@@ -106,12 +119,15 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
     for (const r of radios) r.checked = doc.settings.insideView === r.value;
     if (document.activeElement !== slider || !sliderKey) slider.value = String(doc.settings.growth);
     showGrow(doc.settings.growth);
+    lineLook.set({ style: doc.settings.lineStyle, color: doc.settings.lineColor });
   }
   store.on(() => { if (!back.hidden) sync(); });
 
   return {
     get isOpen() { return !back.hidden; },
     open() {
+      sliderSeq++;
+      lineLook.reset();
       sync();
       back.hidden = false;
     },

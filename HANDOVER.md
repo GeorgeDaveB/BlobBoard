@@ -19,7 +19,7 @@ BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas tha
 | File | What it's for | Keep it updated when… |
 |---|---|---|
 | `HANDOVER.md` (this) | status, decision log, how the code really works, gotchas | anything is built or decided |
-| `DESIGN.md` | the spec: requirements **R1–R30**, choices **C1–C13**, modules, phases | a requirement or design choice changes |
+| `DESIGN.md` | the spec: requirements **R1–R31**, choices **C1–C13**, modules, phases | a requirement or design choice changes |
 | `README.md` | run locally, deploy | the run/deploy steps change |
 | `CLAUDE.md` | working rules for AI assistants in this folder | the way of working changes |
 
@@ -44,7 +44,7 @@ Rule: **every change lands with (1) code, (2) tests where logic is involved, (3)
 | 8 | Dropbox sync (PKCE, 3-way merge) | planned — owner must create the Dropbox app (DESIGN §16) |
 | 9 | PWA polish (service worker, icons, install) | planned |
 
-Tests: **75 passing** (local + live) as of this update.
+Tests: **79 passing** (local + live) as of this update.
 
 ---
 
@@ -86,6 +86,9 @@ Tests: **75 passing** (local + live) as of this update.
 | 2026-10-05 | New line gets an **arrowhead at the end you drag to**; lines **follow an open blob's edge** | Owner picked the recommended options |
 | 2026-10-05 | **Growth slider** in ⚙ (per canvas, `settings.growth` 0–3, default 1) = blobs' worth of area per inside item; **cap raised to 5×** | Owner request; slider doesn't push neighbours |
 | 2026-10-05 | Connect handle shows a dot-with-arrow icon; **app version** shown in ⚙ (`js/version.js`, bump on every deploy) | Owner couldn't find the plain dot (or had a cached old build) |
+| 2026-10-05 | **R31 line look + text:** Gooey/Straight style; Gradient/Start/End/Custom colour; per-canvas default in ⚙ + per-line override; label pill at the middle (white border, line colours); line editor (✎ / tap selected line) | Owner request; "parent"/"inherited" colours confirmed as Start/End blob |
+| 2026-10-05 | Connect handle = thin black arrow icon | Owner request |
+| 2026-10-05 | **Bug fix:** string folded back into big blobs — resting middle now between the edges, not the centres; swung-in middle falls back | Owner report (screenshot) |
 | 2026-10-05 | C14 (my choices, flagged): ● dot top-left; colour fades between the two blobs; hint on tapping the dot; messages for invalid targets; Undo toast on line delete | Not specified; easy to change |
 
 ---
@@ -119,7 +122,8 @@ One shared `requestAnimationFrame` loop over all items; damped springs (`[stiffn
 - Data: `doc.links[id] = { from, to, arrowFrom, arrowTo }`; store actions `createLink` (refuses self / different boards / existing pair — `model.linkProblem`), `toggleArrow(id, 'from'|'to')`, `deleteLink`; `ui.selectedLinkId` (an item or a line is selected, never both). Reparent/delete already remove lines (R23).
 - Drawing: SVG layer inserted **before** `.items-layer` in `.world` (so lines are under every blob); `overflow: visible`, 1×1 px, `pointer-events: none` except the invisible `.link-hit` centre line (`vector-effect: non-scaling-stroke`, 22 px). Line controls (`.link-ctls`) are HTML above the items.
 - Each frame (`physics.onFrame`) `board.geom(id)` gives each blob as drawn now (store/drag position + body size + `phys.visual()` offset/squash/roundness); `strandGeometry()` builds the path; DOM is written only if the path string changed.
-- Gestures: `pointerdown` on `.item-link` (● dot) → `link` mode (`linkStart/Move/End/Cancel`); on `.link-hit` → `linePress` (tap = `tapLine`, move = pan). Only top-level blobs have a dot (CSS hides it on minis); targets come from `elementsFromPoint`.
+- Look (R31): `model.lineLook(link, settings, fromColor, toColor)` → `{ style, c0, c1 }`; gradient stops get c0/c1 (equal = solid). Straight style skips the middle spring. Labels are HTML (`.link-labels`, z 899999: above blobs, below open trays 900000 / drag 1000000), positioned at `at(0.5)`; tapping a label = tapping the line. Editors: `ui/lineSheet.js` (one line) and ⚙, both built from `ui/lineLookFields.js`.
+- Gestures: `pointerdown` on `.item-link` (connect handle) → `link` mode (`linkStart/Move/End/Cancel`); on `.link-hit` → `linePress` (tap = `tapLine`, move = pan). Only top-level blobs have a dot (CSS hides it on minis); targets come from `elementsFromPoint`.
 
 ### Growth push (`board.checkGrowth`)
 Runs from the ResizeObserver for closed top-level blobs: if its inside count went up since its last closed measurement and its body got bigger → `pushesFor` + `store.moveItems`, coalesced with the drop's undo key (`growKey`) when it came straight from a drop. Skipped while the render came from undo/redo (`board.render(change)` gets `change.history`).
@@ -140,6 +144,7 @@ Layers (editor, settings, tray/expanded) each `pushState` an entry tagged with a
 7. Git prints LF→CRLF warnings on every commit — harmless.
 8. FLIP transforms on minis are cleared when a mini drag ends; `render()` restores DOM order from the store.
 9. Hidden browser pane also delays **ResizeObserver** until something renders (e.g. a screenshot) → growth push/bounce only appear then. Take a screenshot before and after a drop when testing R30.
+11. A blob's `.item-jelly` box is a rectangle: its invisible corners catch taps/hit-tests. Anything that must stay tappable near blobs (line labels) goes on a layer above the items.
 10. SVG `<path>` with two overlapping sub-paths of opposite winding leaves a hole (white seam) → string and arrowheads are separate paths, with opacity on the group.
 
 ---

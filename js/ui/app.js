@@ -5,6 +5,7 @@ import { createBoard } from './board.js';
 import { createEditSheet, newSessionKey } from './editSheet.js';
 import { initDialogs, toast, confirmDialog } from './dialogs.js';
 import { createSettingsSheet } from './settingsSheet.js';
+import { createLineSheet } from './lineSheet.js';
 import { descendantsOf, childrenOf } from '../core/model.js';
 import { spotInside } from '../services/layout.js';
 
@@ -87,6 +88,7 @@ export function mountApp({ root, store, repo }) {
     onCreateAt: (x, y) => createAt(x, y),
     onTapEmpty: () => { if (editor.isOpen) closeLayer(editorLayer); },
     onDeleteLink: id => deleteLinkWithUndo(id),
+    onEditLink: id => openLineEditor(id),
     onViewChange: v => {
       clearTimeout(viewTimer);
       viewTimer = setTimeout(() => repo.setSetting(viewKey(), v), 400);
@@ -110,6 +112,31 @@ export function mountApp({ root, store, repo }) {
     else requestAnimationFrame(() => board.fit());
   }
 
+  // ---- line editor (label, style, colour) ---------------------------------------
+  const lineSheet = createLineSheet({
+    host: root,
+    store,
+    onRequestClose: () => closeLayer(lineLayer),
+    onDelete: id => { closeLayer(lineLayer); deleteLinkWithUndo(id); }
+  });
+  let lineLayer = 0;
+  function openLineEditor(id) {
+    if (!store.link(id)) return;
+    if (editor.isOpen) closeLayer(editorLayer);
+    store.selectLink(id);
+    if (lineSheet.isOpen && lineSheet.linkId === id) return;
+    lineSheet.close();
+    lineSheet.open(id);
+    root.classList.add('editing');
+    if (!lineLayer) {
+      lineLayer = openLayer(() => {
+        lineLayer = 0;
+        lineSheet.close();
+        root.classList.remove('editing');
+      });
+    }
+  }
+
   const settings = createSettingsSheet({ host: root, store, onRequestClose: () => closeLayer(settingsLayer) });
   let settingsLayer = 0;
   function openSettings() {
@@ -124,6 +151,7 @@ export function mountApp({ root, store, repo }) {
   let editorLayer = 0;
   function openEditor(id, opts = {}) {
     if (!store.item(id)) return;
+    if (lineSheet.isOpen) closeLayer(lineLayer);
     if (opts.expand && store.canvas().settings.insideView === 'container') store.expandTo(id);
     if (editor.isOpen && editor.itemId === id) return;
     if (editor.isOpen) editor.close();
@@ -219,6 +247,9 @@ export function mountApp({ root, store, repo }) {
     refreshChrome();
     syncTrayLayer();
     if (change.type === 'data' && editor.isOpen && !editor.refresh()) closeLayer(editorLayer);
+    if (lineSheet.isOpen && !lineSheet.refresh()) closeLayer(lineLayer);
+    // Selecting something else (or nothing) while editing a line closes it.
+    if (change.type === 'ui' && lineSheet.isOpen && store.ui.selectedLinkId !== lineSheet.linkId) closeLayer(lineLayer);
     // Tapping another item while editing switches the editor to it.
     if (change.type === 'ui' && editor.isOpen && store.ui.selectedId && store.ui.selectedId !== editor.itemId) {
       openEditor(store.ui.selectedId);

@@ -95,10 +95,10 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
 
   const edit = control('item-edit', 'Edit item', '✎', () => onEdit(el.dataset.id));
 
-  // ● connect dot: drag it onto another blob to draw a line (gestures.js).
+  // Connect handle (thin arrow icon): drag it onto another blob to draw a
+  // line (gestures.js).
   const link = control('item-link', 'Drag to another item to connect them', '', () => {});
-  link.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle class="dot" cx="6" cy="18" r="3.6"/>' +
-    '<path d="M8.5 15.5C11 10 14 8 18.5 6.5"/><path d="M14.5 5.2 19 6.3l-1.6 4.3"/></svg>';
+  link.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 18.5 18 6"/><path d="M10.5 6H18v7.5"/></svg>';
 
   el.append(jellyLayer, link, edit);
   applyBob(body, item.seed);
