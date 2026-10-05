@@ -101,7 +101,7 @@ Please check these. Each one is easy to change now and harder later.
 | **C10** | Long-press is decided **on release**: hold then release without moving = edit; hold then move = drag. The phone vibrates lightly when the hold registers. | Stops the editor opening when you just paused before dragging. |
 | **C11** | The PNG picture shows **the board you're looking at**, with groups collapsed. | Predictable output. Open trays could cover other items in a picture. |
 | **C12** | **Duplicate into canvas**: into the *same* canvas → placed next to the original on the same board. Into *another* canvas → its top level, near the middle. | The most likely intent in each case. |
-| **C13** ⏳ *to confirm* | **Selection box gesture.** PC: left-drag on empty space draws the box (like the desktop). Panning on PC then moves to the mouse wheel / two-finger touchpad scroll, middle-button drag, or Space + drag. Phone: one-finger drag still pans; **long-press on empty space, then drag** draws the box. | On a phone, one finger can't both pan and draw a box, so the box needs the hold first. On PC this matches how desktops work, but it changes today's "drag empty space to pan". |
+| **C13** | **Pan / Select mode button** (top bar, ✋ / ⬚; PC shortcuts **H** / **V**; remembered per device). The mode only changes what dragging **empty space** does: Pan mode moves the board, Select mode draws the selection box. Blobs can be dragged in both modes; pinch and the mouse wheel always pan/zoom. Same on PC and phone. | Chosen by you (option A): one simple rule, nothing is lost in either mode. |
 
 ---
 
@@ -378,7 +378,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 ```
 
 - Distances are in screen pixels, so it feels the same at any zoom.
-- Phase 3b adds a **selecting** state: from `emptyPress` it starts on mouse-drag (PC) or after the 500 ms hold (touch); from then on moving the pointer resizes the box.
+- Phase 3b adds a **selecting** state: in Select mode, moving from `emptyPress` starts the box instead of panning (same on PC and phone); from then on moving the pointer resizes the box. Pinch and wheel are unaffected.
 - Stops the browser interfering: no page scrolling, no pull-to-refresh, no double-tap zoom, no text selection, no Android long-press menu on the board.
 
 **`ui/dragDrop.js` — where a dragged item lands (R14, R17, R18)**
@@ -422,6 +422,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 ### 8.7 Multi-select (phase 3b)
 
+- **Mode button** (`topBar.js`): ✋ Pan / ⬚ Select, H / V on PC, saved in device settings.
 - **`ui/selection.js`** — the selection box (a dashed, softly tinted rounded rectangle drawn in screen space), hit-testing items against it (an item is selected if the box *touches* its outline, like Windows), and the selected-set in the store's screen state (`ui.selectedIds`). Shows a small bar: "3 selected · Delete · ✕".
 - **Moving many:** dragging any selected item moves all of them, keeping their spacing. Each gets the liquid "air" physics. On drop, all moved items are treated as fixed and only *other* blobs are pushed aside (`resolveOverlaps` takes a set of fixed ids). One undo step.
 - **Dropping many onto an item** (held 0.5 s) puts them all inside it; each one's lines are removed (R23). Dropping many onto a breadcrumb moves them all to that level.
@@ -442,12 +443,13 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 | ⤢ | click | tap | open the inside board |
 | ● dot dragged to another item on the same board | | | new line |
 | Line | click | tap | select → + / − at each end, × in the middle |
-| Empty board | drag | one-finger drag | pan |
+| Empty board, Pan mode | drag | one-finger drag | pan |
 | Empty board | mouse wheel / two-finger scroll | — | pan |
 | Empty board | Ctrl + wheel / touchpad pinch | two-finger pinch | zoom (20%–250%) |
 | Empty board | double-click | double-tap | new item there |
 | Empty board | click | tap | deselect, collapse the tray |
-| Empty board | left-drag (C13) | long-press, then drag | selection box: every item it touches gets selected |
+| Empty board, Select mode (C13) | drag | drag | selection box: every item it touches gets selected |
+| ✋ / ⬚ button, or H / V on PC | click | tap | switch Pan / Select mode (only changes empty-space drags) |
 | Item | Ctrl/Shift + click | — | add / remove that item from the selection |
 | Any selected item | drag | drag | all selected items move together |
 | + button | click | tap | new item in the middle of the screen |
@@ -611,7 +613,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 1 Board basics | model, store, device database, pan/zoom, animated blobs, create/edit (title, notes, colour picker, done), move, undo | items survive a reload; tests pass |
 | 2 Groups | drag-hold-into, mini shapes + badge, trays (nested), drag out, ⤢ inside boards, breadcrumb + drops, back button | R14–R18 checklist passes |
 | 3 Lines | connect dot, lines, select, + / − arrows, × delete, removal on regrouping | R21–R23 pass |
-| 3b Multi-select | selection box (PC drag / phone long-press + drag), Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
+| 3b Multi-select | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
 | 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
 | 5 Tags | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
