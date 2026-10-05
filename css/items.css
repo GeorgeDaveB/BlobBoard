@@ -373,3 +373,17 @@
 }
 .item.mini > .item-ctl { zoom: 1.5; }
 .item.dragging > .item-ctl, .item.ghost > .item-ctl { opacity: 0; }
+
+/* ---- ● connect dot, top-left (R21) ----
+   Drag it onto another blob on the board to draw a line. Not on minis. */
+.item-link { left: -6px; }
+.item-link > .dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--lc, var(--accent));
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(40, 30, 20, .18);
+}
+@media (pointer: coarse) { .item-link { left: -10px; } }
+.item.mini > .item-link, .item.ghost > .item-link { display: none; }
+.item.link-target > .item-jelly > .item-body { box-shadow: 0 0 0 4px #fff, 0 4px 16px rgba(40, 30, 20, .22); }

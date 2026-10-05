@@ -72,13 +72,13 @@ Numbered so the build phases and tests can refer to them.
 - **R27** **Inside view option** (⚙ Settings, per canvas): *Tray below the blob* (R16) or *Inside the blob* (container). Container view: when a blob is edited (✎, long-press, right-click, Enter) or tapped again once selected, it springs into a rounded rectangle — title on top, then the full description in a box (tap to edit in place; **−** hides it for this time only, a "▸ Description" pill brings it back), then a grid of its inside blobs that pop in one after another, plus a + tile. Selecting or editing a blob inside keeps it open; an inside blob that is opened becomes a nested container spanning a full row. It floats above its neighbours (the canvas layout is never disturbed). Nothing about it is remembered per blob: it opens with the description shown every time.
 - **R28** **Reorder inside items** (both views): drag a mini within its grid; the others slide aside. Over the middle of a sibling (held 0.5 s) it goes inside that sibling instead; past the grid's edge onto the board it leaves the group. Grids use equal cells.
 - **R29** **Fast drop into an open blob:** dragging a blob from outside over an expanded blob's grid (tray or container) lights the grid up immediately — no centre-aim, no wait — and dropping puts it inside at the slot under the finger (one undo step). Holding over the middle of a blob in that grid still nests into that blob. An expanded blob never wiggles/flattens against blobs dragged past it.
-- **R30** **Blobs grow with their contents:** a closed blob on the board grows as if its inside items had merged into it like drops — each inside item adds one default blob's *area*: size = base × √(1 + number of items directly inside), capped at 3×. Base = whatever its title/description already make it. Size changes use the bouncy resize. Minis keep their grid cell size; open blobs size to their content. Neighbours are **not** pushed aside when a blob grows (only drags displace blobs).
+- **R30** **Blobs grow with their contents:** a closed blob on the board grows as if its inside items had merged into it like drops — each inside item adds one default blob's *area*: size = base × √(1 + number of items directly inside), capped at 3×. Base = whatever its title/description already make it. Size changes use the bouncy resize. Minis keep their grid cell size; open blobs size to their content. **When it grows, neighbours it now overlaps are pushed aside** with the same minimal chain push as a drop (owner, 2026-10-05): part of the drop's undo step when it grew from a drop; its own undo step when it grows on closing (items were added while it was open). Never during undo/redo.
 - **R26** While a dragged blob is held over another (arming), the target swells enough that its edge shows **all around the held blob** (title and notes included), so you can see which blob you're dropping into.
 - **R19** ✎ or long-press → edit the item.
 - **R20** Duplicate an item into a canvas (any canvas, including the current one) with everything inside it, all its text included. Also "Move to canvas…".
 
 **Links**
-- **R21** Connect two items with a line by dragging from a dot on the item's edge.
+- **R21** Connect two items with a line by dragging from the **● dot** (top-left of the blob; on hover on PC, on the selected blob on phone) onto another blob. A new line has an **arrowhead at the end you dragged to**. Lines are **"gooey strings"**: thick where they leave a blob, thinner in the middle and thinner the longer they're pulled, hanging slightly, bending and wobbling as their blobs move; coloured as a fade from one blob's colour to the other's. Lines **follow the edge of an open blob** (tray or container view).
 - **R22** Tap a line → a + / − button at each end adds or removes the arrowhead at that end.
 - **R23** When an item moves into a group, its lines are removed. Lines only connect items on the same board.
 
@@ -106,6 +106,7 @@ Please check these. Each one is easy to change now and harder later.
 | **C10** | Long-press is decided **on release**: hold then release without moving = edit; hold then move = drag. The phone vibrates lightly when the hold registers. | Stops the editor opening when you just paused before dragging. |
 | **C11** | The PNG picture shows **the board you're looking at**, with groups collapsed. | Predictable output. Open trays could cover other items in a picture. |
 | **C12** | **Duplicate into canvas**: into the *same* canvas → placed next to the original on the same board. Into *another* canvas → its top level, near the middle. | The most likely intent in each case. |
+| **C14** | Line details not specified by you: the ● dot sits **top-left** (✎ is top-right); a line's colour fades **from one blob's colour to the other's**; tapping the dot without dragging shows a hint; dropping a line on an inner (mini) blob or on an already-connected blob shows a short message; deleting a line shows an **Undo** toast (like items). | Decided while building phase 3; easy to change. |
 | **C13** | **Pan / Select mode button** (top bar, ✋ / ⬚; PC shortcuts **H** / **V**; remembered per device). The mode only changes what dragging **empty space** does: Pan mode moves the board, Select mode draws the selection box. Blobs can be dragged in both modes; pinch and the mouse wheel always pan/zoom. Same on PC and phone. | Chosen by you (option A): one simple rule, nothing is lost in either mode. |
 
 ---
@@ -231,7 +232,7 @@ Run after every load, import and sync merge, so data can never end up broken.
 
 ## 7. Files and folders
 
-✅ = built (as of 2026-10-05, end of phase 2). Everything else is planned for the phase shown.
+✅ = built (as of 2026-10-05, end of phase 3). Everything else is planned for the phase shown.
 
 ```
 BlobBoard/
@@ -241,18 +242,18 @@ BlobBoard/
 ├─ config.js               phase 8 — Dropbox App key + redirect URLs (public values, not secrets)
 ├─ css/
 │  ├─ base.css             ✅ colour tokens, top bar, sheets, buttons, toasts, dialogs, settings
-│  ├─ board.css            ✅ board, dotted background
+│  ├─ board.css            ✅ board, dotted background, lines + line controls
 │  └─ items.css            ✅ blob body, states, mini shapes + badge, grids (tray/container), controls
 ├─ js/
 │  ├─ main.js              ✅ start-up sequence
 │  ├─ core/      ✅ store.js · model.js · events.js · ids.js · migrate.js
 │  ├─ persist/   ✅ db.js · localRepo.js
 │  ├─ sync/      phase 8 — dropboxAuth.js · dropboxApi.js · syncEngine.js · merge.js
-│  ├─ services/  ✅ layout.js · geometry.js · color.js
+│  ├─ services/  ✅ layout.js · geometry.js · color.js · strand.js (gooey-string geometry)
 │  │             phase 4/7 — imageProcessor.js · exportJson.js · exportPng.js
 │  └─ ui/        ✅ app.js · board.js · itemView.js · tray.js · physics.js · gestures.js ·
-│                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js
-│                phase 3+ — linksLayer.js · selection.js · tagPicker.js · imageLibrary.js · canvasMenu.js
+│                   linksLayer.js · editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js
+│                phase 3b+ — selection.js · tagPicker.js · imageLibrary.js · canvasMenu.js
 ├─ icons/                  phase 9 — app icons (192 px, 512 px, maskable)
 ├─ tests/                  ✅ index.html + runner.js + *.test.js (in-browser unit tests)
 ├─ README.md               ✅ run locally / deploy
@@ -265,6 +266,7 @@ BlobBoard/
 - `dragDrop.js` was not split out: drop-target logic lives in `board.js` next to the drag code it depends on.
 - `physics.js` (new) replaced CSS keyframe morphing — see §8.5 and HANDOVER.md.
 - `tray.js` renders both the tray view and the container view grid.
+- `services/strand.js` (new) holds the line shape (edge points, thinning, arrowheads) instead of `geometry.js`, so the PNG export (phase 7) can reuse it.
 
 ## 8. Modules and components
 
@@ -369,11 +371,12 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 - No lines inside trays. Minis have no connect dot.
 - The tray ends with a **+ tile** (R16) that creates a new item inside, with the birth animation, and opens the editor.
 
-**`ui/linksLayer.js` — lines (R21–R23)**
-- Straight lines from edge to edge; arrowheads (SVG markers) at either end.
-- An invisible 20 px-wide line on top of each one makes it easy to tap on a phone.
-- Selected line: highlighted, with **+** or **−** near each end (+ adds the arrowhead there, − removes it) and **×** in the middle (delete).
-- While an item is dragged, only its own lines are redrawn.
+**`ui/linksLayer.js` — lines (R21–R23)** *(as built)*
+- SVG layer under the items. Each line = a filled "gooey string" path + an arrowheads path (separate, so overlaps don't cancel) + an invisible 22 px (screen) wide centre line for tapping. Colour: linear gradient between the two blobs' colours; group opacity .92.
+- Shape (`services/strand.js`): quadratic curve between the blobs' edges (superellipse edge: ellipse for blobs, squarer for open containers). Its middle is a damped spring that rests halfway, hanging down 7% of the length (max 22 px), so it lags and wobbles when blobs move. Width 16 px where it leaves a blob (tucked 8 px under the edge), middle 8 px, thinning past 140 px of length down to 2.4 px. Arrowhead 16 × 20 px, tip on the edge.
+- Updated from the physics frame loop (`onFrame`); positions come from the store (or the live drag), sizes from the measured body, plus each blob's physics offset/squash (`visual()`). Paths are only rewritten when they change.
+- Selected line: white edge, **+** / **−** near each end, **×** in the middle (HTML buttons above the items, constant screen size).
+- Drawing: a temporary string follows the finger from the ● dot; it snaps onto a valid target (white edge on the target), turns grey over an invalid one.
 
 **`ui/gestures.js` — one state machine for every finger and mouse**
 
@@ -626,7 +629,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 0 Setup | folder, local server config, test runner; repo + Pages (you); a "hello" page live | page opens on PC and phone |
 | 1 Board basics | model, store, device database, pan/zoom, animated blobs, create/edit (title, notes, colour picker, done), move, undo | items survive a reload; tests pass |
 | 2 Groups | drag-hold-into (target swells around the held blob), mini shapes + badge, tap-again full expansion with tray + add tile (nested), container view option (R27), reorder (R28), drag minis out, back stack | R14–R17, R26–R28 checklist passes |
-| 3 Lines | connect dot, lines, select, + / − arrows, × delete, removal on regrouping | R21–R23 pass |
+| 3 Lines ✅ | connect dot, gooey lines, select, + / − arrows, × delete, removal on regrouping; growth pushes neighbours (R30) | R21–R23 pass |
 | 3b Multi-select | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
 | 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
 | 5 Tags | picker with create, chips, manager, filter | R10–R11 pass |

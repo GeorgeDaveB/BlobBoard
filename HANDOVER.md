@@ -1,6 +1,6 @@
 # BlobBoard — Handover
 
-*Last updated: 2026-10-05 · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
+*Last updated: 2026-10-05 (phase 3) · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
 
 BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas that you group, reorder, connect and tag. It is a PWA (installable web app) for Windows and Android, plain HTML/CSS/JS with **no build step and no dependencies**, hosted on GitHub Pages, with Dropbox sync planned.
 
@@ -35,8 +35,8 @@ Rule: **every change lands with (1) code, (2) tests where logic is involved, (3)
 | 1 | Board, pan/zoom, blobs, editor, colour picker, undo, device storage | ✅ done |
 | — | Liquid physics (v2), birth animation | ✅ done (owner-tuned) |
 | 2 | Groups: drag-hold into, mini shapes + badge, full expansion, tray **or** container view, + tile, reorder, fast drop into open grid, growth with contents | ✅ done (several owner revisions, see log) |
-| 3 | Lines between blobs, + / − arrowheads, × delete | ⏭ **next** — confirm open questions in §8 first |
-| 3b | Multi-select (Pan/Select mode button, selection box) | planned |
+| 3 | Lines between blobs ("gooey strings"), + / − arrowheads, × delete; growth pushes neighbours | ✅ done — awaiting owner's phone check |
+| 3b | Multi-select (Pan/Select mode button, selection box) | ⏭ **next** — confirm details first (§8) |
 | 4 | Pictures & cards (thumbnail toggle) | planned |
 | 5 | Tags + filter | planned |
 | 6 | Multiple canvases, duplicate/move to canvas | planned |
@@ -44,7 +44,7 @@ Rule: **every change lands with (1) code, (2) tests where logic is involved, (3)
 | 8 | Dropbox sync (PKCE, 3-way merge) | planned — owner must create the Dropbox app (DESIGN §16) |
 | 9 | PWA polish (service worker, icons, install) | planned |
 
-Tests: **62 passing** (local + live) as of this update.
+Tests: **73 passing** (local + live) as of this update.
 
 ---
 
@@ -80,7 +80,11 @@ Tests: **62 passing** (local + live) as of this update.
 | 2026-10-05 | **Container view** option (⚙, per canvas) — R27; opens when edited or tapped again; inline description edit; − hides for that time only; nested containers; floats above neighbours | Owner spec; nothing remembered per item |
 | 2026-10-05 | **Reorder** inside items in both views; grids use equal cells — R28 | Owner request |
 | 2026-10-05 | **Fast drop** into an open grid at the pointed slot (no centre-aim, no wait); expanded blobs don't react to contact — R29 | Owner: dropping in was slow/awkward |
-| 2026-10-05 | **Growth with contents** — R30: size × √(1 + items inside), max 3×; neighbours not pushed | Owner: "adds to diameter"; simplest stable rule = drops merging (area adds). Open question §8 |
+| 2026-10-05 | **Growth with contents** — R30: size × √(1 + items inside), max 3× | Owner: "adds to diameter"; simplest stable rule = drops merging (area adds) |
+| 2026-10-05 | **Growth pushes neighbours aside** (minimal chain push), in the drop's undo step; own step when growing on close; never on undo/redo | Owner answered the open question |
+| 2026-10-05 | **Lines = "gooey strings"** (thick at the blobs, thin in the middle, thinner when longer, sagging spring middle) | Owner picked this over straight / soft curve |
+| 2026-10-05 | New line gets an **arrowhead at the end you drag to**; lines **follow an open blob's edge** | Owner picked the recommended options |
+| 2026-10-05 | C14 (my choices, flagged): ● dot top-left; colour fades between the two blobs; hint on tapping the dot; messages for invalid targets; Undo toast on line delete | Not specified; easy to change |
 
 ---
 
@@ -109,6 +113,15 @@ One shared `requestAnimationFrame` loop over all items; damped springs (`[stiffn
 - Drop precedence in `drop()`: **0** reorder in own grid → **0b** fast drop into another open grid (`drag.pane`, slot index) → **1** armed target (held 500 ms; swells to show around the held blob) → **2** board (empty or over a closed top-level blob): land + `resolveOverlaps` push-apart → **3** otherwise snap back (incl. its own parent's container).
 - Reorder uses grid **slots measured at drag start** (fractions of the grid box), and a FLIP slide animation for siblings.
 
+### Lines (`ui/linksLayer.js` + `services/strand.js`)
+- Data: `doc.links[id] = { from, to, arrowFrom, arrowTo }`; store actions `createLink` (refuses self / different boards / existing pair — `model.linkProblem`), `toggleArrow(id, 'from'|'to')`, `deleteLink`; `ui.selectedLinkId` (an item or a line is selected, never both). Reparent/delete already remove lines (R23).
+- Drawing: SVG layer inserted **before** `.items-layer` in `.world` (so lines are under every blob); `overflow: visible`, 1×1 px, `pointer-events: none` except the invisible `.link-hit` centre line (`vector-effect: non-scaling-stroke`, 22 px). Line controls (`.link-ctls`) are HTML above the items.
+- Each frame (`physics.onFrame`) `board.geom(id)` gives each blob as drawn now (store/drag position + body size + `phys.visual()` offset/squash/roundness); `strandGeometry()` builds the path; DOM is written only if the path string changed.
+- Gestures: `pointerdown` on `.item-link` (● dot) → `link` mode (`linkStart/Move/End/Cancel`); on `.link-hit` → `linePress` (tap = `tapLine`, move = pan). Only top-level blobs have a dot (CSS hides it on minis); targets come from `elementsFromPoint`.
+
+### Growth push (`board.checkGrowth`)
+Runs from the ResizeObserver for closed top-level blobs: if its inside count went up since its last closed measurement and its body got bigger → `pushesFor` + `store.moveItems`, coalesced with the drop's undo key (`growKey`) when it came straight from a drop. Skipped while the render came from undo/redo (`board.render(change)` gets `change.history`).
+
 ### Back stack (`app.js`)
 Layers (editor, settings, tray/expanded) each `pushState` an entry tagged with an id. UI closes just close the layer (no `history.back()` from code — it caused races); on `popstate` we close every layer above the target entry and skip stale entries.
 
@@ -124,6 +137,8 @@ Layers (editor, settings, tray/expanded) each `pushState` an entry tagged with a
 6. The local `python -m http.server` lets the browser cache ES modules → `fetch(url, {cache: 'reload'})` each changed file before retesting.
 7. Git prints LF→CRLF warnings on every commit — harmless.
 8. FLIP transforms on minis are cleared when a mini drag ends; `render()` restores DOM order from the store.
+9. Hidden browser pane also delays **ResizeObserver** until something renders (e.g. a screenshot) → growth push/bounce only appear then. Take a screenshot before and after a drop when testing R30.
+10. SVG `<path>` with two overlapping sub-paths of opposite winding leaves a hole (white seam) → string and arrowheads are separate paths, with opacity on the group.
 
 ---
 
@@ -142,6 +157,7 @@ python -m http.server 8000
 
 ## 8. Open questions / next steps
 
-- **Waiting on owner (2026-10-05):** when a blob grows with its contents (R30), should it push neighbours aside (one undo step with the drop), or stay as now (may overlap)?
-- **Phase 3 (lines) — confirm before building:** lines only between blobs on the same level (R23); inside items in grids have none. Questions to ask: may lines connect to an open container? does a line stay attached when its blob grows (yes, edges follow the body size)? arrowhead style?
+- **Owner to check on the phone (phase 3):** drawing from the ● dot, tapping thin lines, + / − / × buttons, gooey look while dragging, growth push.
+- **Not built (possible later):** auto-pan while drawing a line near the screen edge; lines between inside items (minis); line labels.
+- **Phase 3b (multi-select) — confirm before building:** DESIGN §8.7 is the plan; ask how lines between selected blobs behave when moved together (they just follow), and whether a selection bar should offer "connect all".
 - Parked: inside boards/sub-canvases; Background Sync; multi-select details beyond DESIGN §8.7.

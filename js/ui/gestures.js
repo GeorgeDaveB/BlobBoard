@@ -5,7 +5,9 @@
 //                         │                    └─up─► holdEnd(release) = edit
 //                         └─up quickly─► tapItem
 //  idle ─down on empty─► emptyPress ─moved─► pan ;  up quickly ─► tap / double-tap
-//  second finger at any point ─► pinch (an item drag is cancelled first)
+//  idle ─down on ● dot─► link ─move─► linkMove ─up─► linkEnd (cancelled: linkCancel)
+//  idle ─down on a line─► linePress ─moved─► pan ;  up quickly ─► tapLine
+//  second finger at any point ─► pinch (an item drag / new line is cancelled first)
 
 const MOVE_PX = 6;
 const HOLD_MS = 500;
@@ -22,6 +24,7 @@ export function attachGestures(surface, h) {
   let pinch = null;
   let lastTap = null;
   let lastType = 'mouse';
+  let lineId = null;
 
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const clearHold = () => { clearTimeout(timer); timer = 0; };
@@ -33,7 +36,8 @@ export function attachGestures(surface, h) {
   surface.addEventListener('pointerdown', e => {
     lastType = e.pointerType;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (e.target.closest('.item-ctl, [data-no-gesture]')) return;
+    const dot = e.target.closest('.item-link');
+    if (!dot && e.target.closest('.item-ctl, [data-no-gesture]')) return;
     // A tray's background belongs to no item: ignore it (minis inside are fine).
     const trayEl = e.target.closest('.tray');
     const hitItem = e.target.closest('.item');
@@ -46,6 +50,7 @@ export function attachGestures(surface, h) {
       if (mode === 'drag') h.dragCancel(itemId);
       if (mode === 'holding') h.holdEnd(itemId, false);
       if (mode === 'pan') h.panEnd();
+      if (mode === 'link') h.linkCancel();
       mode = 'pinch';
       pinch = pair();
       h.pinchStart();
@@ -56,7 +61,16 @@ export function attachGestures(surface, h) {
     start = { x: e.clientX, y: e.clientY, id: e.pointerId };
     last = { x: e.clientX, y: e.clientY };
     const itemEl = e.target.closest('.item');
-    if (itemEl) {
+    const hitLine = e.target.closest('.link-hit');
+    if (dot && itemEl) {
+      itemId = itemEl.dataset.id;
+      mode = 'link';
+      h.linkStart(itemId, e.clientX, e.clientY);
+    } else if (hitLine) {
+      itemId = null;
+      lineId = hitLine.dataset.link;
+      mode = 'linePress';
+    } else if (itemEl) {
       itemId = itemEl.dataset.id;
       mode = 'pressing';
       timer = setTimeout(() => {
@@ -96,7 +110,11 @@ export function attachGestures(surface, h) {
       h.dragMove(itemId, p.x, p.y);
       return;
     }
-    if (mode === 'emptyPress' && moved) {
+    if (mode === 'link') {
+      h.linkMove(p.x, p.y);
+      return;
+    }
+    if ((mode === 'emptyPress' || mode === 'linePress') && moved) {
       mode = 'pan';
       h.panStart();
     }
@@ -126,6 +144,8 @@ export function attachGestures(surface, h) {
     else if (mode === 'holding') h.holdEnd(itemId, !cancelled);
     else if (mode === 'drag') cancelled ? h.dragCancel(itemId) : h.dragEnd(itemId, e.clientX, e.clientY);
     else if (mode === 'pan') h.panEnd();
+    else if (mode === 'link') cancelled ? h.linkCancel() : h.linkEnd(e.clientX, e.clientY);
+    else if (mode === 'linePress' && !cancelled) h.tapLine(lineId);
     else if (mode === 'emptyPress' && !cancelled) {
       const p = { x: e.clientX, y: e.clientY, t: e.timeStamp };
       if (lastTap && p.t - lastTap.t < DOUBLE_MS && dist(p, lastTap) < DOUBLE_PX) {
@@ -139,6 +159,7 @@ export function attachGestures(surface, h) {
     mode = 'idle';
     start = null;
     itemId = null;
+    lineId = null;
   }
 
   surface.addEventListener('pointerup', e => end(e, false));

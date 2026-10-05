@@ -58,7 +58,17 @@ let lastMorph = 0;
 let morphFps = TUNING.morphFps;
 let avgMs = 0;
 
+const frameHooks = new Set();
+
 export function setPaused(value) { paused = value; }
+
+// fn(now) runs at the end of every frame, after all items moved (lines use
+// it to follow their blobs). Returns an unsubscribe function.
+export function onFrame(fn) {
+  frameHooks.add(fn);
+  ensureLoop();
+  return () => frameHooks.delete(fn);
+}
 export function stats() { return { items: items.size, active: active.size, avgMs, morphFps }; }
 
 // One frame. Exported so tests (and a hidden browser pane) can step by hand.
@@ -71,13 +81,14 @@ export function tick(now = performance.now()) {
     if (isActive && h._step()) active.delete(h);
     if (h.visible && (isActive || morphDue)) h._shape(now);
   }
+  for (const fn of frameHooks) fn(now);
   avgMs = avgMs * 0.95 + (performance.now() - t0) * 0.05;
   morphFps = avgMs > TUNING.slowMs ? 15 : TUNING.morphFps;
 }
 
 function loop(now) {
   tick(now);
-  raf = items.size ? requestAnimationFrame(loop) : 0;
+  raf = items.size || frameHooks.size ? requestAnimationFrame(loop) : 0;
 }
 
 function ensureLoop() {
@@ -108,6 +119,8 @@ export function createPhysics(layer, body, seed) {
   let contacts = [];
   let lastRadius = '';
   let lastTransform = '';
+  // Where the jelly layer is drawn relative to its resting place (for lines).
+  const vis = { tx: 0, ty: 0, kx: 1, ky: 1 };
 
   function wake() {
     if (REDUCED.matches) return;
@@ -154,6 +167,7 @@ export function createPhysics(layer, body, seed) {
     if (settled) {
       for (const k of KEYS) { s[k] = REST[k]; s['v' + k] = 0; }
       if (lastTransform) { layer.style.transform = ''; lastTransform = ''; }
+      vis.tx = 0; vis.ty = 0; vis.kx = 1; vis.ky = 1;
       layer.style.opacity = '';
       return;
     }
@@ -176,6 +190,7 @@ export function createPhysics(layer, body, seed) {
     const trail = TUNING.trailPx / TUNING.maxAir;
     const tx = s.ox - s.ax * trail;
     const ty = s.oy - s.ay * trail - (h0 / 2) * (1 - s.sy); // size bounce anchored at the top
+    vis.tx = tx; vis.ty = ty; vis.kx = kx; vis.ky = ky;
     const str = 'translate(' + tx.toFixed(2) + 'px,' + ty.toFixed(2) + 'px) matrix(' +
       (d11 * kx).toFixed(4) + ',' + (d12 * kx).toFixed(4) + ',' +
       (d12 * ky).toFixed(4) + ',' + (d22 * ky).toFixed(4) + ',0,0)';
@@ -184,6 +199,10 @@ export function createPhysics(layer, body, seed) {
 
   const h = {
     visible: true,
+
+    // { tx, ty, kx, ky }: current offset and scale of the drawn blob, and
+    // roundness rd (1 = blob … 0.16 = container rectangle).
+    visual() { return { tx: vis.tx, ty: vis.ty, kx: vis.kx, ky: vis.ky, rd: s.rd }; },
 
     _step() {
       const t = targets();

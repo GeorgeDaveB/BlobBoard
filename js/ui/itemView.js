@@ -95,7 +95,11 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
 
   const edit = control('item-edit', 'Edit item', '✎', () => onEdit(el.dataset.id));
 
-  el.append(jellyLayer, edit);
+  // ● connect dot: drag it onto another blob to draw a line (gestures.js).
+  const link = control('item-link', 'Drag to another item to connect them', '', () => {});
+  link.innerHTML = '<span class="dot" aria-hidden="true"></span>';
+
+  el.append(jellyLayer, link, edit);
   applyBob(body, item.seed);
   el._parts = { body, title, notes, kids, shapes, badge, desc, descText, descInput, descShow };
   el._phys = createPhysics(jellyLayer, body, item.seed);
@@ -153,6 +157,7 @@ export function updateItemEl(el, item, ctx) {
     el.classList.toggle('has-notes', !!item.notes);
     el.classList.toggle('done', item.done);
     p.body.style.setProperty('--c', item.color);
+    el.style.setProperty('--lc', item.color); // connect dot
     p.body.style.setProperty('--tc', textColorFor(item.color));
     el.setAttribute('aria-label', (item.title || 'Untitled') + (item.done ? ', done' : ''));
     el._sig = sig;

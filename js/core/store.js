@@ -1,6 +1,6 @@
 // The single source of truth in memory. Only these actions change data, so
 // every change is saved, (later) synced and undoable the same way.
-import { newItem, applyItemPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
+import { newItem, newLink, linkProblem, applyItemPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
 import { createEmitter } from './events.js';
 
 export const UNDO_LIMIT = 50;
@@ -10,8 +10,9 @@ export function createStore({ repo, now = () => Date.now() }) {
   const history = new Map(); // canvasId -> { undo: [], redo: [] }
   const events = createEmitter();
   // Screen state (not saved): which items are expanded (a path from the top
-  // level down: one per level, C2) and what is selected.
-  const ui = { canvasId: null, expanded: [], selectedId: null };
+  // level down: one per level, C2) and what is selected (an item or a line,
+  // never both).
+  const ui = { canvasId: null, expanded: [], selectedId: null, selectedLinkId: null };
 
   function hist(canvasId) {
     let h = history.get(canvasId);
@@ -57,6 +58,7 @@ export function createStore({ repo, now = () => Date.now() }) {
     }
     ui.expanded = path;
     if (ui.selectedId && !doc.items[ui.selectedId]) ui.selectedId = null;
+    if (ui.selectedLinkId && !doc.links[ui.selectedLinkId]) ui.selectedLinkId = null;
   }
 
   function replaceDoc(canvasId, json) {
@@ -78,6 +80,7 @@ export function createStore({ repo, now = () => Date.now() }) {
       ui.canvasId = canvases.has(currentId) ? currentId : (docs[0] && docs[0].id) || null;
       ui.expanded = [];
       ui.selectedId = null;
+      ui.selectedLinkId = null;
     },
 
     canvas(id = ui.canvasId) { return canvases.get(id) || null; },
@@ -86,10 +89,24 @@ export function createStore({ repo, now = () => Date.now() }) {
       return (doc && doc.items[id]) || null;
     },
 
+    link(id) {
+      const doc = canvases.get(ui.canvasId);
+      return (doc && doc.links[id]) || null;
+    },
+
     select(id) {
       const next = id || null;
-      if (ui.selectedId === next) return;
+      if (ui.selectedId === next && !ui.selectedLinkId) return;
       ui.selectedId = next;
+      ui.selectedLinkId = null;
+      events.emit({ type: 'ui' });
+    },
+
+    selectLink(id) {
+      const next = id || null;
+      if (ui.selectedLinkId === next && !ui.selectedId) return;
+      ui.selectedLinkId = next;
+      ui.selectedId = null;
       events.emit({ type: 'ui' });
     },
 
@@ -235,6 +252,37 @@ export function createStore({ repo, now = () => Date.now() }) {
           if (gone.has(ln.from) || gone.has(ln.to)) delete doc.links[lid];
         }
         if (gone.has(ui.selectedId)) ui.selectedId = null;
+      });
+    },
+
+    // A line from `from` to `to` (same board, one per pair), arrowhead at
+    // `to`. Returns the new id, or null if not allowed (see linkProblem).
+    createLink(from, to, opts = {}) {
+      let id = null;
+      commit(opts.coalesce, (doc, t) => {
+        if (linkProblem(doc, from, to)) return false;
+        const ln = newLink(from, to, t);
+        doc.links[ln.id] = ln;
+        id = ln.id;
+      });
+      return id;
+    },
+
+    // Adds or removes the arrowhead at one end ('from' | 'to').
+    toggleArrow(linkId, end) {
+      return commit(null, (doc, t) => {
+        const ln = doc.links[linkId];
+        if (!ln || (end !== 'from' && end !== 'to')) return false;
+        const k = end === 'from' ? 'arrowFrom' : 'arrowTo';
+        ln[k] = !ln[k];
+        ln.updatedAt = t;
+      });
+    },
+
+    deleteLink(linkId) {
+      return commit(null, doc => {
+        if (!doc.links[linkId]) return false;
+        delete doc.links[linkId];
       });
     },
 

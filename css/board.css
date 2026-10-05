@@ -30,3 +30,62 @@
   color: var(--muted);
   pointer-events: none;
 }
+
+/* ---- lines (gooey strings), under the items ---- */
+.links-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+/* Opacity on the group, so string and arrowheads blend as one shape. */
+.link { opacity: .92; }
+.link-goo, .link-heads { stroke: none; }
+.link.selected > .link-goo, .link.selected > .link-heads {
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 2px 4px rgba(40, 30, 20, .25));
+}
+/* Wide invisible copy of the centre line: easy to tap on a phone. */
+.link-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 22px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.link.temp { pointer-events: none; }
+.link.temp { opacity: .8; }
+.link.temp.bad { opacity: .45; }
+.link.temp.bad > .link-goo, .link.temp.bad > .link-tip { fill: var(--muted); }
+
+/* + / − near each end and × in the middle of the selected line. Same
+   on-screen size rule as the item controls. */
+.link-ctls { position: absolute; left: 0; top: 0; z-index: 1000001; }
+.link-ctl {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1;
+  box-shadow: var(--shadow-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transform: scale(max(min(calc(1 / var(--z, 1)), 1.18), calc(.6 / var(--z, 1))));
+}
+.link-del { color: var(--danger); }
+@media (pointer: coarse) {
+  .link-ctl { width: 40px; height: 40px; margin: -20px 0 0 -20px; }
+}

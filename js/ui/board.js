@@ -1,19 +1,22 @@
 // The canvas you see: pan/zoom, rendering top-level items by id (with the
-// tray of an expanded item), dragging, grouping drops, auto-pan.
+// tray of an expanded item), lines between them, dragging, grouping drops,
+// drawing lines, auto-pan.
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, itemRect } from '../services/geometry.js';
 import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps } from '../services/layout.js';
-import { childrenOf, descendantsOf } from '../core/model.js';
+import { childrenOf, descendantsOf, linkProblem } from '../core/model.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
 import { renderTray, disposeTray, syncInline, removeInline } from './tray.js';
 import { attachGestures } from './gestures.js';
 import { setPaused } from './physics.js';
+import { createLinksLayer } from './linksLayer.js';
+import { toast } from './dialogs.js';
 
 const EDGE = 48;        // auto-pan zone at the screen edge while dragging (px)
 const EDGE_SPEED = 14;  // max auto-pan speed (px per frame)
 const DOT = 24;         // background dot spacing at zoom 1
 const ARM_MS = 500;     // hold over a blob this long to drop *into* it
 
-export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreateAt, onTapEmpty, onViewChange }) {
+export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreateAt, onTapEmpty, onViewChange, onDeleteLink }) {
   const boardEl = document.createElement('div');
   boardEl.className = 'board';
   const world = document.createElement('div');
@@ -33,6 +36,9 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   let drag = null;
   let rafPan = 0;
   let wheelTimer = 0;
+  let linking = null;       // drawing a new line: { from, targetId, problem }
+  let fromHistory = false;  // last render was an undo/redo
+  let growKey = null;       // { id, key }: the drop that will make `id` grow
 
   // Body sizes (for placement, fit, contacts). A size change bounces the
   // blob. Runs after layout, before paint, so the bounce has no flash.
@@ -45,8 +51,33 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const prev = sizes.get(id);
       sizes.set(id, next);
       if (prev && (prev.w !== next.w || prev.h !== next.h)) itemEl._phys.resized(prev, next);
+      if (els.get(id) === itemEl) checkGrowth(itemEl, id, next);
     }
   });
+
+  // R30 follow-up: when a closed blob on the board gets bigger because
+  // items went inside it, the neighbours it now overlaps are pushed aside
+  // (same minimal chain push as a drop). Part of the drop's undo step when
+  // it grew straight from a drop; its own step when it grows on closing.
+  // Never during undo/redo (the history already has the right positions).
+  function checkGrowth(el, id, size) {
+    if (el.classList.contains('expanded') || (drag && drag.id === id && !drag.ghost)) return;
+    const n = el._kidCount || 0;
+    const was = el._closed;
+    el._closed = { n, w: size.w, h: size.h };
+    if (fromHistory || !was || n <= was.n || (size.w <= was.w + 1 && size.h <= was.h + 1)) return;
+    const item = store.item(id);
+    if (!item) return;
+    const pushes = pushesFor(id, item.x, item.y, size);
+    if (!pushes.length) return;
+    // Joins the drop's undo step only if nothing else was recorded since
+    // (the store merges same-key steps only when they are adjacent).
+    const key = growKey && growKey.id === id ? growKey.key : null;
+    growKey = null;
+    const from = new Map(pushes.map(m => [m.id, { x: store.item(m.id).x, y: store.item(m.id).y }]));
+    store.moveItems(pushes, { coalesce: key });
+    glide(pushes, from);
+  }
   // Pause animation for items off screen (battery).
   const io = new IntersectionObserver(entries => {
     for (const en of entries) {
@@ -63,6 +94,29 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   const rect = () => boardEl.getBoundingClientRect();
   const sizeOf = id => sizes.get(id) || NEW_ITEM_SIZE;
 
+  // A blob as drawn right now (position incl. drag, size, physics offset and
+  // squash), for the lines. null if it isn't on this board.
+  function geom(id) {
+    const el = els.get(id);
+    const item = store.item(id);
+    if (!el || !item) return null;
+    const dragged = drag && drag.id === id && !drag.ghost;
+    const x = dragged ? drag.x : item.x, y = dragged ? drag.y : item.y;
+    const s = sizeOf(id);
+    const v = el._phys.visual();
+    return { cx: x + v.tx, cy: y + s.h / 2 + v.ty, a: (s.w / 2) * v.kx, b: (s.h / 2) * v.ky, rd: v.rd };
+  }
+
+  const links = createLinksLayer({
+    world,
+    before: itemsLayer,
+    store,
+    geom,
+    color: id => (store.item(id) ? store.item(id).color : '#999'),
+    onToggleArrow: (id, end) => store.toggleArrow(id, end),
+    onDelete: id => (onDeleteLink ? onDeleteLink(id) : store.deleteLink(id))
+  });
+
   function applyView() {
     world.style.transform = 'translate(' + view.x + 'px, ' + view.y + 'px) scale(' + view.z + ')';
     world.style.setProperty('--z', view.z);
@@ -77,7 +131,8 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   }
 
   // ---- rendering ------------------------------------------------------------
-  function render() {
+  function render(change) {
+    fromHistory = !!(change && change.history);
     const doc = store.canvas();
     const ui = store.ui;
     const seen = new Set();
@@ -96,7 +151,9 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
         io.observe(el);
       }
       const expanded = ui.expanded[0] === item.id;
-      updateItemEl(el, item, { selected: ui.selectedId === item.id, kids: childrenOf(doc, item.id), expanded, container });
+      const kids = childrenOf(doc, item.id);
+      el._kidCount = kids.length;
+      updateItemEl(el, item, { selected: ui.selectedId === item.id, kids, expanded, container });
       allEls.set(item.id, el);
       if (!drag || drag.id !== item.id || drag.ghost) {
         positionEl(el, item.x, item.y);
@@ -131,7 +188,63 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     }
     hint.hidden = seen.size > 0;
     hint.textContent = 'Double-tap empty space or press + to add an item';
+    links.render();
   }
+
+  // ---- drawing a line (R21) ------------------------------------------------
+  // From the ● dot of a blob to another blob on the same board.
+  function linkTargetAt(sx, sy) {
+    for (const e of document.elementsFromPoint(sx, sy)) {
+      if (e.closest('.link-ctls')) continue;
+      const it = e.closest('.item');
+      if (it) {
+        if (it.dataset.id === linking.from) return null;
+        if (it.classList.contains('mini')) return { id: it.dataset.id, problem: 'level' };
+        return { id: it.dataset.id, problem: linkProblem(store.canvas(), linking.from, it.dataset.id) };
+      }
+      if (e === boardEl) return null;
+    }
+    return null;
+  }
+
+  function setLinkTarget(id) {
+    if (linking.targetId === id) return;
+    const old = linking.targetId && els.get(linking.targetId);
+    if (old) old.classList.remove('link-target');
+    linking.targetId = id;
+    const el = id && els.get(id);
+    if (el) {
+      el.classList.add('link-target');
+      el._phys.poke(-0.05);
+      if (navigator.vibrate) navigator.vibrate(10);
+    }
+  }
+
+  function linkMove(sx, sy) {
+    if (!linking) return;
+    const r = rect();
+    const wp = screenToWorld(view, sx - r.left, sy - r.top);
+    const t = linkTargetAt(sx, sy);
+    linking.problem = t ? t.problem : '';
+    setLinkTarget(t && !t.problem ? t.id : null);
+    links.moveTemp(wp.x, wp.y, t ? t.id : null, !!t && !t.problem);
+  }
+
+  function linkStop() {
+    if (!linking) return null;
+    const l = { ...linking };
+    setLinkTarget(null);
+    links.endTemp();
+    boardEl.classList.remove('linking');
+    linking = null;
+    return l;
+  }
+
+  const LINK_PROBLEMS = {
+    level: 'Lines only connect blobs on the same board',
+    exists: 'These two are already connected'
+  };
+
 
   // ---- dragging -----------------------------------------------------------
   // drag = { id, el (what moves: the board item, or a ghost for a mini),
@@ -456,10 +569,13 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       render();
       return;
     }
-    // 1. Held over a blob long enough: put it inside.
+    // 1. Held over a blob long enough: put it inside. (It grows; the
+    //    neighbours it then pushes aside belong to this same undo step.)
     if (d.armedId && hit.kind === 'item' && hit.id === d.armedId) {
       const p = spotInside(childrenOf(doc, d.armedId));
-      store.reparentItem(d.id, d.armedId, p.x, p.y);
+      const key = 'drop:' + performance.now();
+      growKey = { id: d.armedId, key };
+      store.reparentItem(d.id, d.armedId, p.x, p.y, { coalesce: key });
       store.select(null);
       render();
       return;
@@ -487,6 +603,31 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   const elFor = id => allEls.get(id);
 
   attachGestures(boardEl, {
+    linkStart: (id, sx, sy) => {
+      if (!els.has(id)) return;
+      linking = { from: id, targetId: null, problem: '', sx, sy };
+      boardEl.classList.add('linking');
+      els.get(id)._phys.poke(0.05);
+      links.startTemp(id);
+      linkMove(sx, sy);
+    },
+    linkMove: (sx, sy) => linkMove(sx, sy),
+    linkEnd: (sx, sy) => {
+      if (!linking) return;
+      linkMove(sx, sy);
+      const l = linkStop();
+      if (l.targetId) {
+        if (store.createLink(l.from, l.targetId)) {
+          for (const id of [l.from, l.targetId]) { const el = els.get(id); if (el) el._phys.poke(0.07); }
+        }
+      } else if (LINK_PROBLEMS[l.problem]) {
+        toast(LINK_PROBLEMS[l.problem]);
+      } else if (Math.hypot(sx - l.sx, sy - l.sy) < 12) {
+        toast('Drag the dot onto another blob to connect them');
+      }
+    },
+    linkCancel: () => linkStop(),
+    tapLine: id => store.selectLink(id),
     // Tap selects; tapping the selected item again (or a quick double
     // click) expands it fully, and once more collapses it.
     tapItem: id => {
@@ -537,6 +678,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     pinchEnd: () => setMoving(false),
     tapEmpty: () => {
       store.select(null);
+      store.selectLink(null);
       store.setExpanded([]);
       if (onTapEmpty) onTapEmpty();
     },

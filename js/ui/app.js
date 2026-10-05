@@ -86,6 +86,7 @@ export function mountApp({ root, store, repo }) {
     onAddInside: id => createInside(id),
     onCreateAt: (x, y) => createAt(x, y),
     onTapEmpty: () => { if (editor.isOpen) closeLayer(editorLayer); },
+    onDeleteLink: id => deleteLinkWithUndo(id),
     onViewChange: v => {
       clearTimeout(viewTimer);
       viewTimer = setTimeout(() => repo.setSetting(viewKey(), v), 400);
@@ -195,6 +196,11 @@ export function mountApp({ root, store, repo }) {
     toast('Deleted “' + (item.title || 'Untitled') + '”', { actionLabel: 'Undo', onAction: () => store.undo() });
   }
 
+  function deleteLinkWithUndo(id) {
+    if (!store.deleteLink(id)) return;
+    toast('Line deleted', { actionLabel: 'Undo', onAction: () => store.undo() });
+  }
+
   // ---- reacting to changes ------------------------------------------------
   function refreshChrome() {
     const doc = store.canvas();
@@ -206,7 +212,7 @@ export function mountApp({ root, store, repo }) {
 
   let shownExpanded = '';
   store.on(change => {
-    board.render();
+    board.render(change);
     const exp = store.ui.expanded.join('/');
     if (exp && exp !== shownExpanded) requestAnimationFrame(() => board.revealTray());
     shownExpanded = exp;
@@ -232,7 +238,7 @@ export function mountApp({ root, store, repo }) {
     const typing = e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]');
     if (e.key === 'Escape') {
       if (layers.length) closeTopLayer();
-      else store.select(null);
+      else { store.select(null); store.selectLink(null); }
       return;
     }
     if (typing) return;
@@ -241,6 +247,7 @@ export function mountApp({ root, store, repo }) {
     if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); store.undo(); }
     else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); store.redo(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && store.ui.selectedId) { e.preventDefault(); deleteWithUndo(store.ui.selectedId); }
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && store.ui.selectedLinkId) { e.preventDefault(); deleteLinkWithUndo(store.ui.selectedLinkId); }
     else if (e.key === 'Enter' && store.ui.selectedId) { e.preventDefault(); openEditor(store.ui.selectedId, { expand: true }); }
   });
 

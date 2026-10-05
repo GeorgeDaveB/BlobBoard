@@ -119,6 +119,32 @@ export function canMoveInto(canvas, id, targetId) {
   return !ancestorsOf(canvas, targetId).includes(id);
 }
 
+// ---- links (lines between two items) ---------------------------------------
+
+// A new line from `from` to `to`, with an arrowhead at the `to` end.
+export function newLink(from, to, now = Date.now()) {
+  return { id: 'l-' + uuid(), from, to, arrowFrom: false, arrowTo: true, createdAt: now, updatedAt: now };
+}
+
+// The line joining a and b (either direction), or null.
+export function linkBetween(canvas, a, b) {
+  for (const ln of Object.values(canvas.links)) {
+    if ((ln.from === a && ln.to === b) || (ln.from === b && ln.to === a)) return ln;
+  }
+  return null;
+}
+
+// Why a and b can't be connected: 'missing' | 'self' | 'level' (not on the
+// same board) | 'exists' — or '' if they can.
+export function linkProblem(canvas, a, b) {
+  const A = canvas.items[a], B = canvas.items[b];
+  if (!A || !B) return 'missing';
+  if (a === b) return 'self';
+  if (A.parentId !== B.parentId) return 'level';
+  if (linkBetween(canvas, a, b)) return 'exists';
+  return '';
+}
+
 export function countInside(canvas, id) {
   return childrenOf(canvas, id).length;
 }
