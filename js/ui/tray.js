@@ -25,6 +25,7 @@ export function renderTray(trayEl, parent, depth, ctx) {
     st.add.addEventListener('click', e => { e.stopPropagation(); ctx.onAdd(st.add.dataset.parent); });
   }
   st.add.dataset.parent = parent.id;
+  trayEl.dataset.owner = parent.id; // the item this grid belongs to (fast drops)
   st.add.setAttribute('aria-label', 'Add an item inside ' + (parent.title || 'Untitled'));
 
   const order = [];

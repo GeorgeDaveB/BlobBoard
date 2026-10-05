@@ -207,7 +207,13 @@ export function createStore({ repo, now = () => Date.now() }) {
         }
         const siblings = childrenOf(doc, target).filter(s => s.id !== id);
         item.parentId = target;
-        item.order = siblings.length ? siblings[siblings.length - 1].order + 1 : 0;
+        if (opts.index != null) {
+          // Dropped at a specific slot of the group's grid.
+          siblings.splice(Math.max(0, Math.min(siblings.length, opts.index)), 0, item);
+          siblings.forEach((s, i) => { if (s.order !== i) { s.order = i; s.updatedAt = t; } });
+        } else {
+          item.order = siblings.length ? siblings[siblings.length - 1].order + 1 : 0;
+        }
         item.x = Math.round(x);
         item.y = Math.round(y);
         item.z = maxZ(doc) + 1;

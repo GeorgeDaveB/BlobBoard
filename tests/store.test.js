@@ -134,6 +134,18 @@ export const tests = {
     assertEqual(store.ui.expanded, []);
   },
 
+  'reparent at a slot: lands exactly at that position in the grid': () => {
+    const { store } = setup();
+    const g = store.createItem({});
+    ['a', 'b', 'c'].forEach(t => store.createItem({ parentId: g, title: t }));
+    const x = store.createItem({ title: 'x' });
+    store.reparentItem(x, g, 0, 0, { index: 1 });
+    const titles = Object.values(store.canvas().items).filter(i => i.parentId === g).sort((p, q) => p.order - q.order).map(i => i.title).join('');
+    assertEqual(titles, 'axbc');
+    store.undo();
+    assertEqual(store.item(x).parentId, null, 'one undo step');
+  },
+
   'reorder: moves an item among its siblings, one undo step': () => {
     const { store } = setup();
     const g = store.createItem({});

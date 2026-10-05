@@ -213,6 +213,13 @@
 .tray-nested { animation-name: tray-nested-in; }
 @keyframes tray-nested-in { from { opacity: 0; transform: scaleY(.6); } }
 
+/* A grid lit up as the drop target for a blob dragged from outside */
+.tray.drop-pane {
+  box-shadow: inset 0 0 0 3px var(--ink), 0 8px 26px rgba(40, 30, 20, .2);
+  background: rgba(255, 255, 255, .55);
+  transition: box-shadow .12s ease, background .12s ease;
+}
+
 /* "+" tile at the end of a tray: adds an item inside */
 .tray-add {
   align-self: center;

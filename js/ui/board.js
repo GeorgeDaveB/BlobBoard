@@ -156,6 +156,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     const mine = [];
     for (const [id, el] of els) {
       if (id === drag.id || id === drag.armedId) continue; // armed target swells instead
+      if (store.ui.expanded.includes(id)) continue;          // an open blob keeps still
       const it = store.item(id);
       if (!it) continue;
       const c = ellipseContact(ellipseOf(it, sizeOf(id)), me);
@@ -209,6 +210,22 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     // in the grid it moves to that spot and the others slide aside.
     drag.reorder = false;
     const grid = drag.ghost ? drag.miniEl.parentElement : null;
+
+    // Fast drop into another open grid (tray or container): it lights up
+    // at once and the item goes in at the slot under the finger. Holding
+    // over the middle of a blob in that grid still nests into that blob.
+    let pane = null;
+    const paneGrid = hit.kind === 'tray' ? hit.el
+      : hit.kind === 'item' && hit.el.parentElement && hit.el.parentElement.classList.contains('tray') ? hit.el.parentElement : null;
+    if (paneGrid && paneGrid !== grid) {
+      const owner = paneGrid.dataset.owner;
+      const sibOfPane = hit.kind === 'item' ? hit.el : null;
+      if (owner && !drag.banned.has(owner) && !(sibOfPane && inCentre(sibOfPane, drag.px, drag.py))) {
+        pane = { grid: paneGrid, owner, index: slotIndex(paneGrid, drag.px, drag.py) };
+        target = null;
+      }
+    }
+    setPane(pane);
     if (grid) {
       const sib = hit.kind === 'item' && hit.el.parentElement === grid ? hit.el : null;
       const inGrid = sib || (hit.kind === 'tray' && hit.el === grid);
@@ -232,6 +249,31 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       el._phys.swell(true, swellToShow(el));
       if (navigator.vibrate) navigator.vibrate(20);
     }, ARM_MS);
+  }
+
+  function setPane(pane) {
+    const old = drag.pane && drag.pane.grid;
+    const now = pane && pane.grid;
+    if (old && old !== now) old.classList.remove('drop-pane');
+    if (now && old !== now) {
+      now.classList.add('drop-pane');
+      if (navigator.vibrate) navigator.vibrate(10);
+    }
+    drag.pane = pane;
+  }
+
+  // Insert position in a grid for a drop at (x, y): before/after the nearest cell.
+  function slotIndex(grid, x, y) {
+    const cells = [...grid.children].filter(c => c.classList.contains('item') && !c.classList.contains('ghosted'));
+    if (!cells.length) return 0;
+    let best = 0, bestD = Infinity;
+    cells.forEach((c, i) => {
+      const r = c.getBoundingClientRect();
+      const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    const r = cells[best].getBoundingClientRect();
+    return best + (x > r.left + r.width / 2 ? 1 : 0);
   }
 
   function inCentre(el, x, y) {
@@ -351,8 +393,11 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     cancelAnimationFrame(rafPan);
     const d = drag;
     const armedId = d.armedId;
+    const pane = d.pane;
     disarm();
+    setPane(null);
     d.armedId = armedId; // drop() still needs to know what was armed
+    d.pane = pane;
     clearContacts();
     d.el._phys.setContacts([]);
     d.el._phys.drop();
@@ -400,6 +445,14 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const grid = d.miniEl.parentElement;
       const idx = grid ? [...grid.children].filter(c => c.classList.contains('item')).indexOf(d.miniEl) : -1;
       if (idx >= 0) store.reorderItem(d.id, idx);
+      render();
+      return;
+    }
+    // 0b. Dropped on another open grid: straight in, at that slot.
+    if (d.pane && !d.armedId) {
+      const p = spotInside(childrenOf(doc, d.pane.owner));
+      store.reparentItem(d.id, d.pane.owner, p.x, p.y, { index: d.pane.index });
+      store.select(null);
       render();
       return;
     }
