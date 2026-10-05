@@ -13,7 +13,8 @@
 // fight each other.
 import { textColorFor } from '../services/color.js';
 import { seededRandom } from '../core/ids.js';
-import { badgeText } from '../core/model.js';
+import { badgeText, LIMITS } from '../core/model.js';
+import { createRichEditor, notesHtmlOf } from './richText.js';
 import { createPhysics } from './physics.js';
 
 let inlineSeq = 0;
@@ -28,7 +29,7 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   const title = document.createElement('div');
   title.className = 'item-title';
   const notes = document.createElement('div');
-  notes.className = 'item-notes';
+  notes.className = 'item-notes rich-text';
   const done = document.createElement('span');
   done.className = 'item-done';
   done.textContent = '✓';
@@ -39,12 +40,12 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   desc.className = 'item-desc';
   desc.dataset.noGesture = '';
   const descText = document.createElement('div');
-  descText.className = 'desc-text';
-  const descInput = document.createElement('textarea');
+  descText.className = 'desc-text rich-text';
+  // Styled editing in place (R32): created the first time it's needed.
+  let rich = null;
+  const descInput = document.createElement('div');
   descInput.className = 'desc-input';
   descInput.hidden = true;
-  descInput.rows = 2;
-  descInput.setAttribute('aria-label', 'Description');
   const descHide = document.createElement('button');
   descHide.type = 'button';
   descHide.className = 'desc-hide';
@@ -59,24 +60,33 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   body.append(title, notes, desc, descShow);
 
   let editKey = null;
-  const autosize = () => { descInput.style.height = 'auto'; descInput.style.height = descInput.scrollHeight + 2 + 'px'; };
   descText.addEventListener('click', e => {
     e.stopPropagation();
     editKey = 'inline:' + (++inlineSeq);
-    descInput.value = el._notes || '';
+    if (!rich) {
+      rich = createRichEditor({
+        compact: true,
+        placeholder: 'Description',
+        onInput: (html, text) => { if (onNotes) onNotes(el.dataset.id, { notesHtml: html, notes: text.slice(0, LIMITS.notes) }, editKey); }
+      });
+      descInput.append(rich.el);
+      // Leaving the editor (focus moves outside it) shows the text again.
+      descInput.addEventListener('focusout', ev => {
+        if (ev.relatedTarget && descInput.contains(ev.relatedTarget)) return;
+        setTimeout(() => {
+          if (descInput.contains(document.activeElement)) return;
+          showDescText(el);
+          descInput.hidden = true;
+          descText.hidden = false;
+        }, 0);
+      });
+      descInput.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.stopPropagation(); rich.box.blur(); } });
+    }
+    rich.setHtml(el._notesHtml || '');
     descText.hidden = true;
     descInput.hidden = false;
-    autosize();
-    descInput.focus();
+    rich.focus();
   });
-  descInput.addEventListener('input', () => { autosize(); if (onNotes) onNotes(el.dataset.id, descInput.value, editKey); });
-  descInput.addEventListener('blur', () => {
-    descText.textContent = descInput.value || 'Tap to add a description';
-    descText.classList.toggle('empty', !descInput.value);
-    descInput.hidden = true;
-    descText.hidden = false;
-  });
-  descInput.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); descInput.blur(); } });
   descHide.addEventListener('click', e => { e.stopPropagation(); el._descHidden = true; showDesc(el); });
   descShow.addEventListener('click', e => { e.stopPropagation(); el._descHidden = false; showDesc(el); });
 
@@ -103,6 +113,7 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   el.append(jellyLayer, link, edit);
   applyBob(body, item.seed);
   el._parts = { body, title, notes, kids, shapes, badge, desc, descText, descInput, descShow };
+  el._editingDesc = () => !descInput.hidden;
   el._phys = createPhysics(jellyLayer, body, item.seed);
   return el;
 }
@@ -127,6 +138,14 @@ function applyBob(body, seed) {
   body.style.setProperty('--bdl', (-r() * bd).toFixed(2) + 's');
 }
 
+// The description box's text (shown when not editing).
+function showDescText(el) {
+  const t = el._parts.descText;
+  const html = el._notesHtml || '';
+  if (html) t.innerHTML = html; else t.textContent = 'Tap to add a description';
+  t.classList.toggle('empty', !html);
+}
+
 function showDesc(el) {
   const p = el._parts;
   const open = el.classList.contains('container-open');
@@ -139,21 +158,19 @@ function showDesc(el) {
 export function updateItemEl(el, item, ctx) {
   const p = el._parts;
   el._notes = item.notes;
+  el._notesHtml = item.notes || item.notesHtml ? notesHtmlOf(item) : '';
   const container = !!(ctx.expanded && ctx.container);
   if (el.classList.contains('container-open') !== container) {
     el.classList.toggle('container-open', container);
     el._descHidden = false; // shown again every time it opens
   }
-  if (document.activeElement !== p.descInput) {
-    p.descText.textContent = item.notes || 'Tap to add a description';
-    p.descText.classList.toggle('empty', !item.notes);
-  }
+  if (!el._editingDesc()) showDescText(el);
   showDesc(el);
-  const sig = [item.title, item.notes, item.color, item.done].join('\u0001');
+  const sig = [item.title, item.notes, item.notesHtml, item.color, item.done].join('\u0001');
   if (el._sig !== sig) {
     p.title.textContent = item.title || 'Untitled';
     p.title.classList.toggle('untitled', !item.title);
-    p.notes.textContent = item.notes;
+    p.notes.innerHTML = el._notesHtml; // sanitized (richText.js)
     p.notes.hidden = !item.notes;
     el.classList.toggle('has-notes', !!item.notes);
     el.classList.toggle('done', item.done);

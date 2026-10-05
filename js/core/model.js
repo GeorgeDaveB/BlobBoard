@@ -3,7 +3,7 @@ import { uuid } from './ids.js';
 import { PALETTE, isHex } from '../services/color.js';
 
 export const SCHEMA = 1;
-export const LIMITS = { name: 100, title: 200, notes: 5000, label: 80 };
+export const LIMITS = { name: 100, title: 200, notes: 5000, notesHtml: 20000, label: 80 };
 
 export function newCanvas(name, now = Date.now()) {
   return {
@@ -18,7 +18,9 @@ export function newCanvas(name, now = Date.now()) {
   };
 }
 
-const EDITABLE = ['title', 'notes', 'color', 'done', 'thumbId', 'tagIds'];
+// notesHtml: the description with styling (sanitized subset, ui/richText.js);
+// notes: the same as plain text.
+const EDITABLE = ['title', 'notes', 'notesHtml', 'color', 'done', 'thumbId', 'tagIds'];
 
 export function newItem(canvas, fields = {}, now = Date.now()) {
   const parentId = fields.parentId || null;
@@ -28,6 +30,7 @@ export function newItem(canvas, fields = {}, now = Date.now()) {
     parentId,
     title: '',
     notes: '',
+    notesHtml: '',
     color: nextColor(canvas),
     thumbId: null,
     tagIds: [],
@@ -54,6 +57,7 @@ export function applyItemPatch(item, patch) {
     let v = patch[k];
     if (k === 'title') v = String(v).slice(0, LIMITS.title);
     if (k === 'notes') v = String(v).slice(0, LIMITS.notes);
+    if (k === 'notesHtml') v = String(v).slice(0, LIMITS.notesHtml);
     if (k === 'color' && !isHex(v)) continue;
     if (k === 'done') v = !!v;
     if (JSON.stringify(item[k]) !== JSON.stringify(v)) {
@@ -224,6 +228,7 @@ export function sanitizeCanvas(doc) {
     it.parentId = typeof it.parentId === 'string' && it.parentId ? it.parentId : null;
     it.title = str(it.title, LIMITS.title);
     it.notes = str(it.notes, LIMITS.notes);
+    it.notesHtml = str(it.notesHtml, LIMITS.notesHtml);
     if (!isHex(it.color)) { it.color = PALETTE[0].hex; fixes.push('colour ' + key); }
     it.thumbId = typeof it.thumbId === 'string' && it.thumbId ? it.thumbId : null;
     it.tagIds = Array.isArray(it.tagIds) ? [...new Set(it.tagIds.filter(t => typeof t === 'string'))] : [];

@@ -16,7 +16,7 @@
 import { strandGeometry, restMid } from '../services/strand.js';
 import { lineLook } from '../core/model.js';
 import { textColorFor } from '../services/color.js';
-import { onFrame } from './physics.js';
+import { onFrame, MOTION, kick } from './physics.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
@@ -131,7 +131,7 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
       const selected = store.ui.selectedLinkId === ln.id;
       v.g.classList.toggle('selected', selected);
       v.label.classList.toggle('selected', selected);
-      v.d = ''; // arrows or style may have changed: redraw next frame
+      v.d = ''; // arrows or style may have changed: redraw
     }
     for (const id of [...views.keys()]) if (!seen.has(id)) dropView(id);
     const sel = store.ui.selectedLinkId && views.has(store.ui.selectedLinkId) ? store.link(store.ui.selectedLinkId) : null;
@@ -142,6 +142,7 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
       setEnd(btnTo, sel.arrowTo);
     }
     frame();
+    kick();
   }
 
   function setEnd(btn, hasArrow) {
@@ -152,9 +153,9 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
   // Middle of a gooey string: springs towards its resting place.
   function stepMid(state, A, B) {
     const rest = restMid(A, B, state.style);
-    if (!state.mid || REDUCED.matches || state.style === 'straight') {
+    if (!state.mid || REDUCED.matches || !MOTION.lines || state.style === 'straight') {
       state.mid = { x: rest.x, y: rest.y, vx: 0, vy: 0 };
-      return;
+      return false;
     }
     const m = state.mid;
     const [k, damp] = MID_SPRING;
@@ -163,16 +164,26 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
     m.x += m.vx;
     m.y += m.vy;
     if (!isFinite(m.x) || !isFinite(m.y)) state.mid = { x: rest.x, y: rest.y, vx: 0, vy: 0 };
+    // Still moving?
+    return Math.abs(m.vx) + Math.abs(m.vy) > 0.02 || Math.abs(rest.x - m.x) + Math.abs(rest.y - m.y) > 0.1;
   }
 
+  // One frame for every line. Skips lines whose blobs haven't moved and
+  // whose middle is at rest (most frames). Returns true while anything
+  // still moves, so the physics loop keeps running for it.
   function frame() {
     const doc = store.canvas();
-    if (!doc) return;
+    if (!doc) return false;
+    let busy = false;
     for (const [id, v] of views) {
       const ln = doc.links[id];
       const A = ln && geom(ln.from), B = ln && geom(ln.to);
       if (!A || !B) continue;
-      stepMid(v, A, B);
+      const gk = A.cx.toFixed(1) + A.cy.toFixed(1) + A.a.toFixed(1) + A.b.toFixed(1) + B.cx.toFixed(1) + B.cy.toFixed(1) + B.a.toFixed(1) + B.b.toFixed(1) + A.rd.toFixed(2) + B.rd.toFixed(2);
+      if (gk === v.geomKey && !v.moving && v.d) continue;
+      v.geomKey = gk;
+      v.moving = stepMid(v, A, B);
+      if (v.moving) busy = true;
       const s = strandGeometry(A, B, v.mid, { from: ln.arrowFrom, to: ln.arrowTo }, v.style, v.width);
       const d = s ? s.d + '|' + s.arrows : '';
       if (d !== v.d) {
@@ -195,7 +206,8 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
         if (!ctls.hidden && ctls.dataset.link === id) ctls.style.visibility = 'hidden';
       }
     }
-    if (temp) drawTemp();
+    if (temp) { drawTemp(); busy = true; }
+    return busy;
   }
 
   // Label: centred exactly on the middle of the line, filled with the line's

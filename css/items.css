@@ -54,6 +54,9 @@
 @media (prefers-reduced-motion: reduce) {
   .item-body, .kid-shape { animation: none; }
 }
+/* ⚙ Motion switches (R33; classes set on the app root by app.js). */
+.m-no-bob .item-body, .m-no-bob .kid-shape { animation: none !important; }
+.m-no-ui .tray, .m-no-ui .item.mini.pop { animation: none !important; }
 
 .item-title {
   max-width: 100%;
@@ -74,11 +77,11 @@
   line-height: 1.35;
   opacity: .85;
   overflow-wrap: anywhere;
-  white-space: pre-line;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  /* Up to 3 lines, then fades out (it may hold lists, so no line-clamp). */
+  max-height: calc(1.35em * 3);
   overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.1em), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.1em), transparent);
 }
 
 /* With notes the blob grows: wider, taller, extra padding so text stays
@@ -101,9 +104,10 @@
 }
 .item.expanded > .item-jelly > .item-body > .item-notes {
   max-width: 88%;
-  display: block;
-  -webkit-line-clamp: unset;
+  max-height: none;
   overflow: visible;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 /* Done: greyed out + tick (outside the body so the outline can't clip it) */
@@ -280,7 +284,6 @@
 .desc-text {
   font-size: 13.5px;
   line-height: 1.4;
-  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 .desc-text.empty { opacity: .6; font-style: italic; }
@@ -382,3 +385,16 @@
 @media (pointer: coarse) { .item-link { left: -10px; } }
 .item.mini > .item-link, .item.ghost > .item-link { display: none; }
 .item.link-target > .item-jelly > .item-body { box-shadow: 0 0 0 4px #fff, 0 4px 16px rgba(40, 30, 20, .22); }
+
+/* ---- formatted descriptions (R32) ---- */
+.rich-text h3 { font-size: 1.12em; font-weight: 700; margin: 0 0 2px; }
+.rich-text ul, .rich-text ol { margin: 2px 0; padding-left: 1.25em; text-align: left; }
+.rich-text li { margin: 1px 0; }
+.rich-text ul[data-b="circle"] { list-style-type: circle; }
+.rich-text ul[data-b="square"] { list-style-type: square; }
+.rich-text ul[data-b="dash"] { list-style-type: '– '; }
+.rich-text ul[data-b="arrow"] { list-style-type: '→ '; }
+.rich-text ul[data-b="star"] { list-style-type: '★ '; }
+.rich-text ul[data-b="tick"] { list-style-type: '✓ '; }
+/* Inside a closed blob the lists sit centred as a block, text left-aligned. */
+.item-notes.rich-text ul, .item-notes.rich-text ol { display: inline-block; max-width: 100%; vertical-align: top; }

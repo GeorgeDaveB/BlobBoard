@@ -2,6 +2,7 @@
 // Changes apply live; one editor session = one undo step.
 import { createColorPicker } from './colorPicker.js';
 import { LIMITS } from '../core/model.js';
+import { createRichEditor, notesHtmlOf } from './richText.js';
 
 let sessionSeq = 0;
 export const newSessionKey = () => 'edit:' + (++sessionSeq);
@@ -30,10 +31,12 @@ export function createEditSheet({ host, store, onRequestClose, onDelete }) {
   title.maxLength = LIMITS.title;
   title.placeholder = 'Title';
   title.enterKeyHint = 'next';
-  const notes = document.createElement('textarea');
-  notes.maxLength = LIMITS.notes;
-  notes.rows = 3;
-  notes.placeholder = 'Notes';
+  // Description with styling (R32): toolbar + formatted text.
+  const rich = createRichEditor({
+    placeholder: 'Notes',
+    onInput: (html, text) => update({ notesHtml: html, notes: text.slice(0, LIMITS.notes) })
+  });
+  const notes = rich.box;
   const picker = createColorPicker({ onChange: hex => update({ color: hex }) });
 
   const doneRow = document.createElement('label');
@@ -49,7 +52,7 @@ export function createEditSheet({ host, store, onRequestClose, onDelete }) {
   del.className = 'btn btn-danger btn-wide';
   del.textContent = 'Delete item';
 
-  body.append(field('Title', title), field('Notes', notes), field('Colour', picker.el), doneRow, del);
+  body.append(field('Title', title), field('Notes', rich.el), field('Colour', picker.el), doneRow, del);
   sheet.append(head, body);
   host.append(sheet);
 
@@ -72,15 +75,14 @@ export function createEditSheet({ host, store, onRequestClose, onDelete }) {
   }
 
   function autosize() {
-    notes.style.height = 'auto';
-    notes.style.height = Math.min(notes.scrollHeight + 2, 260) + 'px';
+    // The rich box grows with its content (CSS max-height + scroll).
   }
 
   function fill() {
     const it = store.item(itemId);
     if (!it) return;
     if (document.activeElement !== title) title.value = it.title;
-    if (document.activeElement !== notes) notes.value = it.notes;
+    if (!rich.isFocused) rich.setHtml(notesHtmlOf(it));
     doneBox.checked = it.done;
     picker.setValue(it.color);
     autosize();
@@ -88,9 +90,9 @@ export function createEditSheet({ host, store, onRequestClose, onDelete }) {
 
   title.addEventListener('input', () => update({ title: title.value }));
   title.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); notes.focus(); }
+    if (e.key === 'Enter') { e.preventDefault(); rich.focus(); }
   });
-  notes.addEventListener('input', () => { autosize(); update({ notes: notes.value }); });
+
   doneBox.addEventListener('change', () => update({ done: doneBox.checked }));
   for (const f of [title, notes]) {
     f.addEventListener('focus', () => setTimeout(() => f.scrollIntoView({ block: 'nearest' }), 300));

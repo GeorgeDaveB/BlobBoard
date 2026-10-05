@@ -1,13 +1,15 @@
 // ⚙ Settings for the current canvas (saved with the canvas, so they sync):
 // how an expanded item shows what's inside it, how much a blob grows per
 // item inside it (R30), and the default look of lines (R31) with "apply to
-// all lines". Also shows the app version.
+// all lines". A second tab, Motion (R33), switches animations / physics
+// on or off for this device. Also shows the app version.
 // A side pane like the editors (bottom sheet on phones, right panel on PC);
 // opening any other panel closes it (app.js).
 import { APP_VERSION } from '../version.js';
 import { MAX_GROW } from './itemView.js';
 import { createLineLookFields } from './lineLookFields.js';
 import { confirmDialog, toast } from './dialogs.js';
+import { createMotionPanel } from './motionPanel.js';
 
 let sliderSeq = 0;
 const OPTIONS = [
@@ -15,7 +17,8 @@ const OPTIONS = [
   { value: 'container', label: 'Inside the blob', hint: 'The blob opens into a container: title, description, and its items.' }
 ];
 
-export function createSettingsSheet({ host, store, onRequestClose }) {
+// motion: { get(), set(next) } — the device's motion switches (app.js).
+export function createSettingsSheet({ host, store, onRequestClose, motion }) {
   const sheet = document.createElement('section');
   sheet.className = 'sheet settings-sheet';
   sheet.setAttribute('role', 'dialog');
@@ -34,6 +37,36 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
 
   const body = document.createElement('div');
   body.className = 'sheet-body';
+
+  // Tabs: Canvas (saved with the canvas) | Motion (this device).
+  const tabs = document.createElement('div');
+  tabs.className = 'seg settings-tabs';
+  tabs.setAttribute('role', 'tablist');
+  const canvasPane = document.createElement('div');
+  canvasPane.className = 'settings-pane';
+  const motionPanel = createMotionPanel(motion);
+  const motionPane = document.createElement('div');
+  motionPane.className = 'settings-pane';
+  motionPane.append(motionPanel.el);
+  const tabBtns = [['canvas', 'Canvas', canvasPane], ['motion', 'Motion', motionPane]].map(([id, text, pane]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seg-btn';
+    b.textContent = text;
+    b.setAttribute('role', 'tab');
+    b.addEventListener('click', () => showTab(id));
+    tabs.append(b);
+    return { id, b, pane };
+  });
+  function showTab(id) {
+    for (const t of tabBtns) {
+      const on = t.id === id;
+      t.b.classList.toggle('on', on);
+      t.b.setAttribute('aria-selected', String(on));
+      t.pane.hidden = !on;
+    }
+    if (id === 'motion') motionPanel.sync();
+  }
 
   const group = document.createElement('fieldset');
   group.className = 'choice-group';
@@ -134,7 +167,9 @@ export function createSettingsSheet({ host, store, onRequestClose }) {
   note.className = 'settings-note';
   note.textContent = 'Saved with this canvas. · Version ' + APP_VERSION;
 
-  body.append(group, grow, linesTitle, linesHint, lineLook.el, applyAll, note);
+  canvasPane.append(group, grow, linesTitle, linesHint, lineLook.el, applyAll);
+  body.append(tabs, canvasPane, motionPane, note);
+  showTab('canvas');
   sheet.append(head, body);
   host.append(sheet);
 

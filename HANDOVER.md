@@ -19,7 +19,7 @@ BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas tha
 | File | What it's for | Keep it updated when… |
 |---|---|---|
 | `HANDOVER.md` (this) | status, decision log, how the code really works, gotchas | anything is built or decided |
-| `DESIGN.md` | the spec: requirements **R1–R31**, choices **C1–C13**, modules, phases | a requirement or design choice changes |
+| `DESIGN.md` | the spec: requirements **R1–R33**, choices **C1–C13**, modules, phases | a requirement or design choice changes |
 | `README.md` | run locally, deploy | the run/deploy steps change |
 | `CLAUDE.md` | working rules for AI assistants in this folder | the way of working changes |
 
@@ -44,7 +44,7 @@ Rule: **every change lands with (1) code, (2) tests where logic is involved, (3)
 | 8 | Dropbox sync (PKCE, 3-way merge) | planned — owner must create the Dropbox app (DESIGN §16) |
 | 9 | PWA polish (service worker, icons, install) | planned |
 
-Tests: **91 passing** (local + live) as of this update.
+Tests: **98 passing** (local + live) as of this update.
 
 ---
 
@@ -91,6 +91,8 @@ Tests: **91 passing** (local + live) as of this update.
 | 2026-10-06 | Line **thickness** (Thin/Normal/Thick/Extra thick; canvas default + per line); **"Apply to all lines…"** with confirm (clears per-line choices, keeps text, one undo step); per-line choices survive default changes (test added) | Owner request |
 | 2026-10-06 | Line thickness is a **slider** (0.3×–3×) + Default chip per line | Owner request |
 | 2026-10-06 | **Phase 3b multi-select built** per DESIGN §8.7 / C13: ✋/⬚ mode button (H/V), selection box (touch = selected), Ctrl/Shift+click toggles, drag one = move all (spacing kept, others pushed, one undo), hold over a blob / drop on an open grid = all go inside (one undo), "N selected · Delete · ✕" bar + Delete key (asks if anything inside) | Spec was already approved; no new questions |
+| 2026-10-06 | **R32 styled descriptions:** toolbar (B, I, U, Heading, bullets, numbered, bullet type • ◦ ▪ – → ★ ✓), WYSIWYG via `contenteditable` + `execCommand`; stored as sanitized HTML subset in `notesHtml`, plain text kept in `notes` | Owner chose toolbar + see-as-you-type, recommended bullets |
+| 2026-10-06 | **R33 Motion tab** (⚙ → Motion, this device only): 11 switches + presets All on / Light / All off; Light is the default on touch devices; displacement always kept. Physics loop now **stops when idle**; lines skip unchanged frames; contacts skipped when off | Owner: Android was struggling. Owner chose device-only + Light on phones |
 | 2026-10-06 | **⚙ Settings is a side pane** (same `.sheet` as the editors); settings / item editor / line editor close each other (`app.js`) | Owner request |
 | 2026-10-05/06 | GitHub Pages deploys stuck "queued" (GitHub Actions degraded). Run #20 became a ghost (can't cancel). Owner told to re-run the newest run or toggle Settings → Pages source None → main | Not a code problem; unauthenticated API is 60 calls/h — check the live file instead |
 | 2026-10-05 | **Bug fix:** string folded back into big blobs — resting middle now between the edges, not the centres; swung-in middle falls back | Owner report (screenshot) |
@@ -135,6 +137,16 @@ One shared `requestAnimationFrame` loop over all items; damped springs (`[stiffn
 - Gestures: in Select mode `emptyPress` + move → `box` (`boxStart/Move/End/Cancel`); the box is screen-space (`.select-box`), hits = `ellipseTouchesRect` in board coordinates, marked `.box-hit` live, committed with `selectMany` on release (Ctrl/Shift at start = add).
 - Group drag: `drag.group = [{ id, el, dx, dy, size }]`, `drag.groupIds`; members move with the primary, get physics pickUp/drop, are skipped by contacts and hit-tests (`.dragging`). `drop()` → `dropGroup()`: pane (`reparentItems` at the slot), armed (`reparentItems` + growKey), board (`moveItems` + `pushesForMany` with all landed blobs fixed), else snap back. `geom()` knows group positions so lines follow.
 
+### Styled descriptions (`ui/richText.js`)
+- `createRichEditor({ onInput(html, text) })` = toolbar + `contenteditable` box; buttons use `pointerdown.preventDefault()` so the text selection survives; `execCommand` with `styleWithCSS=false` (gives `<b>` not spans). Bullet type = `data-b` on the `<ul>`; CSS `list-style-type` per type.
+- `sanitizeHtml()` keeps b i u h3 ul ol li div br (+ `ul[data-b]`), unwraps everything else, drops scripts/iframes; a heading holding blocks is unwrapped. Used on save AND on display (`notesHtmlOf`, cached). `htmlToPlain()` makes `notes`.
+- Used in `editSheet.js` (Notes) and `itemView.js` (container description box, created lazily; leaving it = `focusout`).
+
+### Motion switches (`physics.MOTION`, `ui/motionPanel.js`)
+- `setMotion(m)` toggles effects; checks sit where each effect starts (`spawn`, `glideFrom`, `resized`, `poke/drop`, `targets()` for drag/swell/contacts, `_shape` for wobble, `setRoundness` for morph); `linksLayer.stepMid` for line wobble; `board.placeMini` for reorder slide; CSS classes `m-no-bob`, `m-no-ui` on `#app` for floating/trays.
+- The loop runs only while something moves: active springs, idle wobble on, or a frame hook returning true (lines still settling, a line being drawn). Anything that changes sizes without physics calls `kick()` (board ResizeObserver).
+- Saved as device setting `motion` (`repo.setSetting`); default from `defaultMotion()` (touch → Light).
+
 ### Growth push (`board.checkGrowth`)
 Runs from the ResizeObserver for closed top-level blobs: if its inside count went up since its last closed measurement and its body got bigger → `pushesFor` + `store.moveItems`, coalesced with the drop's undo key (`growKey`) when it came straight from a drop. Skipped while the render came from undo/redo (`board.render(change)` gets `change.history`).
 
@@ -154,6 +166,7 @@ Layers (editor, settings, tray/expanded) each `pushState` an entry tagged with a
 7. Git prints LF→CRLF warnings on every commit — harmless.
 8. FLIP transforms on minis are cleared when a mini drag ends; `render()` restores DOM order from the store.
 9. Hidden browser pane also delays **ResizeObserver** until something renders (e.g. a screenshot) → growth push/bounce only appear then. Take a screenshot before and after a drop when testing R30.
+12. `contenteditable` + `execCommand` quirks: a list made from a heading nests inside it (we convert the heading to normal text first; the sanitizer also unwraps such headings); scripted `insertParagraph` doesn't behave like a real Enter — test formatting by setting `innerHTML` + an `input` event. In the hidden pane `focusout` doesn't fire on blur: dispatch it.
 11. A blob's `.item-jelly` box is a rectangle: its invisible corners catch taps/hit-tests. Anything that must stay tappable near blobs (line labels) goes on a layer above the items.
 10. SVG `<path>` with two overlapping sub-paths of opposite winding leaves a hole (white seam) → string and arrowheads are separate paths, with opacity on the group.
 

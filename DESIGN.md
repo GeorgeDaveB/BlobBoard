@@ -81,6 +81,8 @@ Numbered so the build phases and tests can refer to them.
 - **R21** Connect two items with a line by dragging from the **connect handle** (top-left of the blob: a thin black arrow icon ↗; on hover on PC, on the selected blob on phone) onto another blob. A new line has an **arrowhead at the end you dragged to**. Lines are **"gooey strings"**: thick where they leave a blob, thinner in the middle and thinner the longer they're pulled, hanging slightly, bending and wobbling as their blobs move; coloured as a fade from one blob's colour to the other's. Lines **follow the edge of an open blob** (tray or container view).
 - **R22** Tap a line → a + / − button at each end adds or removes the arrowhead at that end.
 - **R23** When an item moves into a group, its lines are removed. Lines only connect items on the same board.
+- **R32** **Styled descriptions** (owner, 2026-10-06): a toolbar above the description — **Bold, Italic, Underline, Heading, Bullet list, Numbered list, Bullet type** — and the text looks formatted while typing (in the item editor and in an open blob's description box). The bullet-type button cycles the list under the cursor through • ◦ ▪ – → ★ ✓ (numbered lists are their own button). Stored as a sanitized HTML subset in `notesHtml` (only b i u h3 ul ol li div br, plus the bullet type); `notes` keeps the plain text (sizing, search, older versions). Pasting always pastes plain text. A closed blob shows the first ~3 lines, fading out.
+- **R33** **Motion switches** (owner, 2026-10-06, for speed on Android): ⚙ → **Motion** tab, saved on **this device only**. Each effect can be switched off: idle wobble, floating, gooey line wobble, drag feel, touching blobs, bounces, gliding when pushed, new blob pop, shape morph, target swell, trays & lists. Presets: **All on**, **Light** (wobble, floating and line wobble off — the default on touch devices), **All off**. Switching effects off never changes positions: blobs are still pushed aside on drop (they jump instead of gliding). The animation loop stops completely when nothing moves.
 - **R31** Line **look and text** (owner, 2026-10-05):
   - **Style:** *Gooey* (the rubber string) or *Straight* (a thin straight arrow that just points at the other blob, no physics).
   - **Colour:** *Gradient* (start blob's colour fading to the end blob's), *Start blob* (the colour of the blob it comes from), *End blob* (the colour of the blob it points to), or *Custom* (8 swatches + picker).
@@ -193,6 +195,7 @@ Please check these. Each one is easy to change now and harder later.
 | id | string | random UUID |
 | parentId | string or null | `null` = top level of the canvas; otherwise the group it's inside |
 | title | string | max 200 characters, up to 3 lines shown; empty shows "Untitled" |
+| notesHtml | string | styled description (R32): sanitized HTML subset, max 20 000 characters; `''` = plain `notes` only |
 | notes | string | max 5,000 characters |
 | color | "#rrggbb" | every item has one (auto-picked from the 8 base colours at creation); it also tints the mini shapes |
 | thumbId | string or null | picture library id; a missing picture falls back to the colour |

@@ -7,7 +7,7 @@ import { childrenOf, descendantsOf, linkProblem } from '../core/model.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
 import { renderTray, disposeTray, syncInline, removeInline } from './tray.js';
 import { attachGestures } from './gestures.js';
-import { setPaused } from './physics.js';
+import { setPaused, kick, MOTION } from './physics.js';
 import { createLinksLayer } from './linksLayer.js';
 import { toast } from './dialogs.js';
 
@@ -56,7 +56,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const next = { w: en.target.offsetWidth, h: en.target.offsetHeight };
       const prev = sizes.get(id);
       sizes.set(id, next);
-      if (prev && (prev.w !== next.w || prev.h !== next.h)) itemEl._phys.resized(prev, next);
+      if (prev && (prev.w !== next.w || prev.h !== next.h)) { itemEl._phys.resized(prev, next); kick(); } // lines follow the new size
       if (els.get(id) === itemEl) checkGrowth(itemEl, id, next);
     }
   });
@@ -276,6 +276,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   // don't move); the dragged blob is pressed back the same way.
   let touching = new Map();
   function updateContacts() {
+    if (!MOTION.contact) return; // switched off (⚙ Motion): skip the work too
     const me = ellipseOf({ id: drag.id, x: drag.x, y: drag.y }, drag.size);
     const now = new Map();
     const mine = [];
@@ -431,10 +432,12 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     });
     const items = [...grid.children].filter(c => c.classList.contains('item'));
     if (items.indexOf(mini) === idx) return;
+    const slide = MOTION.ui; // off: siblings jump to their new places
     const sibs = items.filter(c => c !== mini);
     const ref = sibs[idx] || grid.querySelector(':scope > .tray-add');
     const before = new Map(sibs.map(n => [n, n.getBoundingClientRect()]));
     grid.insertBefore(mini, ref);
+    if (!slide) return;
     for (const n of sibs) {
       const a = before.get(n);
       const b = n.getBoundingClientRect();

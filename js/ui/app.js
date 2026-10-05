@@ -6,6 +6,8 @@ import { createEditSheet, newSessionKey } from './editSheet.js';
 import { initDialogs, toast, confirmDialog } from './dialogs.js';
 import { createSettingsSheet } from './settingsSheet.js';
 import { createLineSheet } from './lineSheet.js';
+import { setMotion } from './physics.js';
+import { defaultMotion } from './motionPanel.js';
 import { descendantsOf, childrenOf } from '../core/model.js';
 import { spotInside } from '../services/layout.js';
 
@@ -106,7 +108,7 @@ export function mountApp({ root, store, repo }) {
     host: main,
     store,
     onEdit: id => openEditor(id, { expand: true }),
-    onNotes: (id, text, key) => store.updateItem(id, { notes: text }, { coalesce: key }),
+    onNotes: (id, patch, key) => store.updateItem(id, patch, { coalesce: key }),
     onAddInside: id => createInside(id),
     onCreateAt: (x, y) => createAt(x, y),
     onTapEmpty: () => { if (editor.isOpen) closeLayer(editorLayer); },
@@ -161,7 +163,26 @@ export function mountApp({ root, store, repo }) {
     }
   }
 
-  const settings = createSettingsSheet({ host: root, store, onRequestClose: () => closeLayer(settingsLayer) });
+  // ---- motion switches (R33): this device only ----------------------------------
+  let motion = defaultMotion();
+  function applyMotion(m) {
+    motion = m;
+    setMotion(m);
+    root.classList.toggle('m-no-bob', !m.bob);
+    root.classList.toggle('m-no-ui', !m.ui);
+  }
+  applyMotion(motion);
+  repo.getSetting('motion').then(m => { if (m && typeof m === 'object') applyMotion({ ...defaultMotion(), ...m }); }).catch(() => {});
+
+  const settings = createSettingsSheet({
+    host: root,
+    store,
+    onRequestClose: () => closeLayer(settingsLayer),
+    motion: {
+      get: () => motion,
+      set: m => { applyMotion(m); repo.setSetting('motion', m); }
+    }
+  });
   let settingsLayer = 0;
   // Side panels (settings, item editor, line editor) replace each other.
   function openSettings() {

@@ -10,7 +10,12 @@
 //
 // Idle items only update their outline ~30x a second and only when on screen;
 // items with moving springs update every frame. If the loop gets slow it
-// halves the idle rate by itself.
+// halves the idle rate by itself. The loop stops completely when nothing
+// moves (no idle wobble, no active springs, no busy frame hooks).
+//
+// MOTION (R33): each effect can be switched off on this device (⚙ Motion)
+// for speed. Switching effects off never changes where blobs end up — only
+// how they get there.
 
 import { seededRandom } from '../core/ids.js';
 
@@ -30,6 +35,23 @@ export const TUNING = {
   morphFps: 30,
   slowMs: 5               // average loop time above this -> idle morph at 15 fps
 };
+
+// Which effects run (device setting, ⚙ Motion; app.js loads/saves it).
+export const MOTION = {
+  wobble: true,   // idle outline wobble
+  bob: true,      // gentle floating (CSS, app.js sets a class)
+  drag: true,     // squeeze / flatten / lift while dragging
+  contact: true,  // edges flatten where a dragged blob touches another
+  bounce: true,   // splat on drop, wobble on tap, bouncy size changes
+  birth: true,    // a new blob grows from a dot
+  glide: true,    // pushed blobs glide to their new place (off = jump)
+  morph: true,    // blob <-> card roundness change animates
+  swell: true,    // a held-over target puffs up
+  lines: true,    // gooey lines lag and wobble (linksLayer.js)
+  ui: true        // tray slide-in, inside items popping in, reorder slide
+};
+export const MOTION_KEYS = Object.keys(MOTION);
+const on = k => MOTION[k] && !REDUCED.matches;
 
 // [stiffness, damping]: lower damping = more wobble
 const SPRING = {
@@ -57,13 +79,29 @@ let paused = false;
 let lastMorph = 0;
 let morphFps = TUNING.morphFps;
 let avgMs = 0;
+let hooksBusy = false;
 
 const frameHooks = new Set();
 
 export function setPaused(value) { paused = value; }
 
+// Applies motion switches (all items redraw their outline once).
+export function setMotion(m) {
+  for (const k of MOTION_KEYS) if (k in m) MOTION[k] = !!m[k];
+  const now = performance.now();
+  for (const h of items) {
+    if (!on('morph')) h._snapRound();
+    h._shape(now);
+  }
+  ensureLoop();
+}
+
+// Runs the loop for at least one more frame (e.g. a frame hook has work).
+export function kick() { ensureLoop(); }
+
 // fn(now) runs at the end of every frame, after all items moved (lines use
-// it to follow their blobs). Returns an unsubscribe function.
+// it to follow their blobs); it returns true while it still has work (keeps
+// the loop running). Returns an unsubscribe function.
 export function onFrame(fn) {
   frameHooks.add(fn);
   ensureLoop();
@@ -74,21 +112,24 @@ export function stats() { return { items: items.size, active: active.size, avgMs
 // One frame. Exported so tests (and a hidden browser pane) can step by hand.
 export function tick(now = performance.now()) {
   const t0 = performance.now();
-  const morphDue = !paused && now - lastMorph >= 1000 / morphFps;
+  const morphDue = on('wobble') && !paused && now - lastMorph >= 1000 / morphFps;
   if (morphDue) lastMorph = now;
   for (const h of items) {
     const isActive = active.has(h);
     if (isActive && h._step()) active.delete(h);
     if (h.visible && (isActive || morphDue)) h._shape(now);
   }
-  for (const fn of frameHooks) fn(now);
+  hooksBusy = false;
+  for (const fn of frameHooks) if (fn(now)) hooksBusy = true;
   avgMs = avgMs * 0.95 + (performance.now() - t0) * 0.05;
   morphFps = avgMs > TUNING.slowMs ? 15 : TUNING.morphFps;
 }
 
 function loop(now) {
   tick(now);
-  raf = items.size || frameHooks.size ? requestAnimationFrame(loop) : 0;
+  // Keep going only while something moves.
+  const busy = active.size || hooksBusy || (on('wobble') && items.size);
+  raf = busy ? requestAnimationFrame(loop) : 0;
 }
 
 function ensureLoop() {
@@ -133,7 +174,7 @@ export function createPhysics(layer, body, seed) {
     const t = { ...REST };
     s.pvx *= 0.86;
     s.pvy *= 0.86;
-    if (s.dragging) {
+    if (s.dragging && on('drag')) {
       t.ax = s.pvx * T.airPerPx;
       t.ay = s.pvy * T.airPerPx;
       const m = Math.hypot(t.ax, t.ay);
@@ -149,8 +190,8 @@ export function createPhysics(layer, body, seed) {
         t.ft = Math.max(0, -uy) * f;
       }
     }
-    if (s.swollen && !s.dragging) t.lift = s.swellScale;
-    for (const c of contacts) {
+    if (s.swollen && !s.dragging && on('swell')) t.lift = s.swellScale;
+    for (const c of on('contact') ? contacts : []) {
       t.px += c.ux * c.s * T.contactPress;
       t.py += c.uy * c.s * T.contactPress;
       const f = c.s * T.contactFlat;
@@ -226,7 +267,7 @@ export function createPhysics(layer, body, seed) {
     // Outline = slow wobble, then each side flattened by its amount.
     _shape(now) {
       let tX = 0, bX = 0, lY = 0, rY = 0;
-      if (!REDUCED.matches) {
+      if (on('wobble')) {
         tX = osc[0].A * Math.sin(now * osc[0].w + osc[0].p);
         bX = osc[1].A * Math.sin(now * osc[1].w + osc[1].p);
         lY = osc[2].A * Math.sin(now * osc[2].w + osc[2].p);
@@ -241,7 +282,7 @@ export function createPhysics(layer, body, seed) {
       if (str !== lastRadius) { body.style.borderRadius = str; lastRadius = str; }
     },
 
-    pickUp() { s.dragging = true; s.last = null; s.vq -= 0.04; wake(); },
+    pickUp() { s.dragging = true; s.last = null; if (on('drag')) s.vq -= 0.04; wake(); },
 
     pointer(x, y, t) {
       if (s.last) {
@@ -253,9 +294,9 @@ export function createPhysics(layer, body, seed) {
       wake();
     },
 
-    drop() { s.dragging = false; s.vq += 0.09; wake(); },
+    drop() { s.dragging = false; if (on('bounce')) s.vq += 0.09; wake(); },
 
-    poke(amount = 0.06) { s.vq += amount; wake(); },
+    poke(amount = 0.06) { if (!on('bounce')) return; s.vq += amount; wake(); },
 
     // Armed drop target puffs up to `scale` (big enough to show around the
     // blob being held), and settles back when disarmed.
@@ -270,13 +311,13 @@ export function createPhysics(layer, body, seed) {
     setRoundness(k) {
       if (s.rdT === k) return;
       s.rdT = k;
-      if (REDUCED.matches) { s.rd = k; h._shape(performance.now()); return; }
+      if (!on('morph')) { s.rd = k; s.vrd = 0; h._shape(performance.now()); return; }
       wake();
     },
 
     // A new item comes into existence: from a dot, springing past full size.
     spawn() {
-      if (REDUCED.matches) return;
+      if (!on('birth')) return;
       s.g = 0.05;
       s.vg = 0;
       s.vq = 0.04;
@@ -286,7 +327,7 @@ export function createPhysics(layer, body, seed) {
 
     // Old and new layout size: starts from the old size, springs to the new one.
     resized(prev, next) {
-      if (REDUCED.matches || !prev.w || !prev.h || !next.w || !next.h) return;
+      if (!on('bounce') || !prev.w || !prev.h || !next.w || !next.h) return;
       const c = x => Math.min(2, Math.max(0.5, x));
       s.sx *= c(prev.w / next.w);
       s.sy *= c(prev.h / next.h);
@@ -297,7 +338,7 @@ export function createPhysics(layer, body, seed) {
     // Item was moved by (−dx, −dy): show it at the old place and glide over,
     // with a little squish in the push direction.
     glideFrom(dx, dy) {
-      if (REDUCED.matches) return;
+      if (!on('glide')) return;
       s.ox += dx;
       s.oy += dy;
       const m = Math.hypot(dx, dy) || 1;
@@ -310,10 +351,14 @@ export function createPhysics(layer, body, seed) {
     // contacts: [{ ux, uy, s }] — unit direction from this item towards the
     // blob touching it, and strength 0..1. Empty array = nothing touching.
     setContacts(list) {
+      if (!on('contact')) list = [];
       if (!list.length && !contacts.length) return;
       contacts = list;
       wake();
     },
+
+    // Roundness jumps to its target (morph switched off).
+    _snapRound() { s.rd = s.rdT; s.vrd = 0; },
 
     dispose() {
       items.delete(h);
