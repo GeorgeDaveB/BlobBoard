@@ -19,10 +19,6 @@ async function boot() {
   const store = createStore({ repo });
   store.load(canvases, current.id);
 
-  // Reopen the inside board named in the address (#/canvasId/itemId).
-  const [, hashCanvas, hashBoard] = location.hash.split('/');
-  if (hashCanvas === current.id && hashBoard) store.openBoard(hashBoard);
-
   mountApp({ root: document.getElementById('app'), store, repo });
 
   // Save right away when the app is hidden or closed (phones kill background apps).

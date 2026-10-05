@@ -10,6 +10,7 @@
 }
 .item.dragging { cursor: grabbing; pointer-events: none; }
 .item-jelly {
+  position: relative;
   transform-origin: 50% 50%;
   display: flex;
   flex-direction: column;
@@ -32,6 +33,7 @@
   color: var(--tc, #1f1d1a);
   box-shadow: var(--shadow-1);
   border-radius: 50%; /* the living outline is set by js/ui/physics.js */
+  overflow: hidden;   /* text never shows outside the outline */
   animation: bob var(--bd, 6s) ease-in-out var(--bdl, 0s) infinite;
   transition: box-shadow .15s ease, opacity .2s ease, filter .2s ease;
 }
@@ -69,27 +71,41 @@
   overflow-wrap: break-word;
   white-space: pre-line;
   display: -webkit-box;
-  -webkit-line-clamp: 6;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
 /* With notes the blob grows: wider, taller, extra padding so text stays
-   inside the rounded outline. */
+   inside the outline (physics also makes it a bit squarer). A collapsed
+   blob shows up to 4 lines, then "…". */
 .item.has-notes > .item-jelly > .item-body {
   width: 220px;
   max-width: 240px;
-  min-height: 150px;
-  max-height: 300px;
-  padding: 30px 34px;
+  min-height: 140px;
+  padding: 28px 30px;
 }
 
-/* Done: greyed out + tick */
+/* Fully expanded (tap a selected blob): the whole description is shown and
+   the outline morphs into a rounded card so it fits. */
+.item.expanded.has-notes > .item-jelly > .item-body {
+  width: 260px;
+  max-width: 260px;
+  padding: 26px 24px;
+}
+.item.expanded > .item-jelly > .item-body .item-notes {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+/* Done: greyed out + tick (outside the body so the outline can't clip it) */
 .item-done {
   display: none;
   position: absolute;
-  top: 6px;
-  right: 14px;
+  top: 2px;
+  left: 8px;
+  z-index: 1;
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -100,7 +116,7 @@
   align-items: center;
   justify-content: center;
 }
-.item.done > .item-jelly > .item-body .item-done { display: flex; }
+.item.done > .item-jelly > .item-done { display: flex; }
 .item.done > .item-jelly > .item-body { filter: saturate(.2); opacity: .55; }
 .item.done > .item-jelly > .item-body .item-title { text-decoration: line-through; }
 
@@ -186,6 +202,22 @@
 .tray-nested { animation-name: tray-nested-in; }
 @keyframes tray-nested-in { from { opacity: 0; transform: scaleY(.6); } }
 
+/* "+" tile at the end of a tray: adds an item inside */
+.tray-add {
+  align-self: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 45% 55% 50% 50% / 55% 45% 55% 45%;
+  border: 2px dashed rgba(40, 30, 20, .25);
+  background: rgba(255, 255, 255, .6);
+  color: var(--muted);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, transform .15s ease;
+}
+.tray-add:hover { background: #fff; color: var(--ink); transform: scale(1.06); }
+
 /* Minis: same component, smaller, laid out by the tray grid. */
 .item.mini {
   position: relative;
@@ -196,7 +228,7 @@
 /* Ghost: the full-size copy that follows the finger when a mini is dragged */
 .item.ghost { pointer-events: none; }
 
-/* ---- controls: ✎ top-right, ⤢ top-left ----
+/* ---- control: ✎ top-right ----
    Shown on hover (PC) or when selected (phone). */
 .item-ctl {
   position: absolute;
@@ -222,7 +254,6 @@
   z-index: 2;
 }
 .item-edit { right: -6px; }
-.item-open { left: -6px; }
 .item.selected > .item-ctl { opacity: 1; pointer-events: auto; }
 @media (hover: hover) {
   .item:not(.dragging):hover > .item-ctl { opacity: 1; pointer-events: auto; }
@@ -230,7 +261,6 @@
 @media (pointer: coarse) {
   .item-ctl { width: 40px; height: 40px; top: -10px; }
   .item-edit { right: -10px; }
-  .item-open { left: -10px; }
 }
 .item.mini > .item-ctl { zoom: 1.5; }
 .item.dragging > .item-ctl, .item.ghost > .item-ctl { opacity: 0; }

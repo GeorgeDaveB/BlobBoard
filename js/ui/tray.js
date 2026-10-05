@@ -1,18 +1,27 @@
-// The expanded view of a group: its inside items as minis, in rows of 3
-// (4 when there are 10 or more). Tapping a mini that is itself a group
-// expands it the same way: its tray appears as a full-width row right under
-// the row that mini sits in. Elements are reused by id so physics state and
-// animation survive re-renders.
+// The tray of an expanded item: its inside items as minis, in rows of 3
+// (4 when there are 10 or more), ending with a "+" tile that adds a new item
+// inside. Expanding a mini works the same way: its tray appears as a
+// full-width row right under the row that mini sits in. Elements are reused
+// by id so physics state and animation survive re-renders.
 import { childrenOf } from '../core/model.js';
 import { createItemEl, updateItemEl } from './itemView.js';
 
 // trayEl: the .tray element to fill. parent: the expanded item. depth: its
-// index in ui.expanded. ctx: { doc, ui, onEdit, onOpen, register }
+// index in ui.expanded. ctx: { doc, ui, onEdit, onAdd, register }
 export function renderTray(trayEl, parent, depth, ctx) {
-  const st = trayEl._st || (trayEl._st = { minis: new Map(), nested: null });
+  const st = trayEl._st || (trayEl._st = { minis: new Map(), nested: null, add: null });
   const kids = childrenOf(ctx.doc, parent.id);
-  const cols = kids.length <= 9 ? 3 : 4;
+  const cols = Math.min(kids.length + 1, kids.length <= 9 ? 3 : 4);
   trayEl.style.setProperty('--cols', cols);
+  if (!st.add) {
+    st.add = document.createElement('button');
+    st.add.type = 'button';
+    st.add.className = 'tray-add';
+    st.add.textContent = '+';
+    st.add.addEventListener('click', e => { e.stopPropagation(); ctx.onAdd(st.add.dataset.parent); });
+  }
+  st.add.dataset.parent = parent.id;
+  st.add.setAttribute('aria-label', 'Add an item inside ' + (parent.title || 'Untitled'));
 
   const order = [];
   const seen = new Set();
@@ -23,7 +32,7 @@ export function renderTray(trayEl, parent, depth, ctx) {
     seen.add(kid.id);
     let el = st.minis.get(kid.id);
     if (!el) {
-      el = createItemEl(kid, { onEdit: ctx.onEdit, onOpen: ctx.onOpen, mini: true });
+      el = createItemEl(kid, { onEdit: ctx.onEdit, mini: true });
       st.minis.set(kid.id, el);
     }
     updateItemEl(el, kid, {
@@ -36,6 +45,10 @@ export function renderTray(trayEl, parent, depth, ctx) {
     if (openId === kid.id) openIndex = i;
   });
 
+  // "+" tile is the last cell.
+  order.push(st.add);
+  const cells = kids.length + 1;
+
   // Nested tray for the expanded mini, placed after the last item of its row.
   if (openIndex >= 0) {
     if (!st.nested) {
@@ -43,7 +56,7 @@ export function renderTray(trayEl, parent, depth, ctx) {
       st.nested.className = 'tray tray-nested';
     }
     renderTray(st.nested, kids[openIndex], depth + 1, ctx);
-    const rowEnd = Math.min(kids.length - 1, Math.floor(openIndex / cols) * cols + cols - 1);
+    const rowEnd = Math.min(cells - 1, Math.floor(openIndex / cols) * cols + cols - 1);
     order.splice(rowEnd + 1, 0, st.nested);
   } else if (st.nested) {
     disposeTray(st.nested);

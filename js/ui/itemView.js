@@ -2,10 +2,11 @@
 // Structure:
 //   .item (position, moved by JS)
 //     .item-jelly (physics transform)
-//       .item-body (outline set by physics + CSS bob)
+//       .item-body (outline set by physics + CSS bob; clips its text)
+//       .item-done (✓ when done)
 //       .item-kids (collapsed group: up to 6 mini shapes + count badge)
-//     ✎ / ⤢ controls
-//     .tray (expanded group, top-level items only; see tray.js)
+//     ✎ control
+//     .tray (expanded item, top-level items only; see tray.js)
 // Each layer owns its own `transform`, so dragging, physics and the bob never
 // fight each other.
 import { textColorFor } from '../services/color.js';
@@ -13,7 +14,7 @@ import { seededRandom } from '../core/ids.js';
 import { badgeText } from '../core/model.js';
 import { createPhysics } from './physics.js';
 
-export function createItemEl(item, { onEdit, onOpen, mini = false }) {
+export function createItemEl(item, { onEdit, mini = false }) {
   const el = document.createElement('div');
   el.className = mini ? 'item mini' : 'item';
   el.dataset.id = item.id;
@@ -28,7 +29,7 @@ export function createItemEl(item, { onEdit, onOpen, mini = false }) {
   done.className = 'item-done';
   done.textContent = '✓';
   done.setAttribute('aria-hidden', 'true');
-  body.append(title, notes, done);
+  body.append(title, notes);
 
   const kids = document.createElement('div');
   kids.className = 'item-kids';
@@ -41,12 +42,11 @@ export function createItemEl(item, { onEdit, onOpen, mini = false }) {
 
   const jellyLayer = document.createElement('div');
   jellyLayer.className = 'item-jelly';
-  jellyLayer.append(body, kids);
+  jellyLayer.append(body, done, kids);
 
   const edit = control('item-edit', 'Edit item', '✎', () => onEdit(el.dataset.id));
-  const open = control('item-open', 'Open inside', '⤢', () => onOpen(el.dataset.id));
 
-  el.append(jellyLayer, edit, open);
+  el.append(jellyLayer, edit);
   applyBob(body, item.seed);
   el._parts = { body, title, notes, kids, shapes, badge };
   el._phys = createPhysics(jellyLayer, body, item.seed);
@@ -113,6 +113,9 @@ export function updateItemEl(el, item, ctx) {
   el.classList.toggle('group', kids.length > 0);
   el.classList.toggle('expanded', !!ctx.expanded);
   el.classList.toggle('selected', !!ctx.selected);
+  // Text needs a squarer outline to stay inside: a bit with notes, a lot
+  // when fully expanded (whole description shown). Morphs with a spring.
+  el._phys.setRoundness(item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
 }
 
 export function positionEl(el, x, y, extra = '') {

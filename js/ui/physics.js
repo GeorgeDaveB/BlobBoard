@@ -40,12 +40,14 @@ const SPRING = {
   flat: [0.16, 0.76],
   size: [0.085, 0.80],
   glide: [0.075, 0.80],
+  round: [0.12, 0.74],      // blob <-> rounded-card morph (expand/notes)
   grow: [0.075, 0.80],     // birth, expanding: soft, overshoots to ~1.2x
   growBack: [0.30, 0.50]   // birth, contracting back to size: snappy
 };
 
 const KEYS = ['ax', 'ay', 'px', 'py', 'lift', 'q', 'sx', 'sy', 'ox', 'oy', 'fr', 'fl', 'ft', 'fb', 'g'];
 const REST = { ax: 0, ay: 0, px: 0, py: 0, lift: 1, q: 0, sx: 1, sy: 1, ox: 0, oy: 0, fr: 0, fl: 0, ft: 0, fb: 0, g: 1 };
+// Not reset when settling: roundness (rd) stays wherever it was sent.
 
 // ---- shared loop ----------------------------------------------------------
 const items = new Set();
@@ -89,6 +91,7 @@ function pct(x) {
 
 function spring(s, key, target, [k, damp]) {
   const vk = 'v' + key;
+  if (!isFinite(s[key]) || !isFinite(s[vk])) { s[key] = target; s[vk] = 0; } // never run away
   s[vk] = (s[vk] + (target - s[key]) * k) * damp;
   s[key] += s[vk];
   return Math.abs(s[key] - target) < 0.0008 && Math.abs(s[vk]) < 0.0008;
@@ -100,7 +103,7 @@ export function createPhysics(layer, body, seed) {
   // 4 slow oscillators: top/bottom horizontal radii, left/right vertical radii.
   const osc = [0, 1, 2, 3].map(() => ({ A: 6 + r() * 5, w: (Math.PI * 2) / (9000 + r() * 5000), p: r() * Math.PI * 2 }));
 
-  const s = { pvx: 0, pvy: 0, last: null, dragging: false, swollen: false };
+  const s = { pvx: 0, pvy: 0, last: null, dragging: false, swollen: false, swellScale: 1.12, rd: 1, vrd: 0, rdT: 1 };
   for (const k of KEYS) { s[k] = REST[k]; s['v' + k] = 0; }
   let contacts = [];
   let lastRadius = '';
@@ -133,7 +136,7 @@ export function createPhysics(layer, body, seed) {
         t.ft = Math.max(0, -uy) * f;
       }
     }
-    if (s.swollen && !s.dragging) t.lift = T.swell;
+    if (s.swollen && !s.dragging) t.lift = s.swellScale;
     for (const c of contacts) {
       t.px += c.ux * c.s * T.contactPress;
       t.py += c.uy * c.s * T.contactPress;
@@ -195,6 +198,7 @@ export function createPhysics(layer, body, seed) {
       rest = spring(s, 'ox', 0, SPRING.glide) && rest;
       rest = spring(s, 'oy', 0, SPRING.glide) && rest;
       rest = spring(s, 'g', 1, s.vg >= 0 && s.g < 1.5 ? SPRING.grow : SPRING.growBack) && rest;
+      rest = spring(s, 'rd', s.rdT, SPRING.round) && rest;
       const settled = rest && !s.dragging && !s.swollen && contacts.length === 0;
       applyTransform(settled);
       return settled;
@@ -209,7 +213,8 @@ export function createPhysics(layer, body, seed) {
         lY = osc[2].A * Math.sin(now * osc[2].w + osc[2].p);
         rY = osc[3].A * Math.sin(now * osc[3].w + osc[3].p);
       }
-      const ft = 1 - s.ft, fb = 1 - s.fb, fl = 1 - s.fl, fr = 1 - s.fr;
+      const k = Math.max(0.2, s.rd); // roundness: 1 = blob, lower = rounded card
+      const ft = (1 - s.ft) * k, fb = (1 - s.fb) * k, fl = (1 - s.fl) * k, fr = (1 - s.fr) * k;
       // horizontal radii TL TR BR BL / vertical radii TL TR BR BL
       const str =
         pct((50 + tX) * ft) + pct((50 - tX) * ft) + pct((50 - bX) * fb) + pct((50 + bX) * fb) + '/' +
@@ -233,10 +238,20 @@ export function createPhysics(layer, body, seed) {
 
     poke(amount = 0.06) { s.vq += amount; wake(); },
 
-    // Armed drop target puffs up (and settles back when disarmed).
-    swell(on) {
-      if (s.swollen === !!on) return;
+    // Armed drop target puffs up to `scale` (big enough to show around the
+    // blob being held), and settles back when disarmed.
+    swell(on, scale = TUNING.swell) {
+      if (s.swollen === !!on && (!on || s.swellScale === scale)) return;
       s.swollen = !!on;
+      s.swellScale = scale;
+      wake();
+    },
+
+    // 1 = organic blob; lower = squarer rounded card (fits long text).
+    setRoundness(k) {
+      if (s.rdT === k) return;
+      s.rdT = k;
+      if (REDUCED.matches) { s.rd = k; h._shape(performance.now()); return; }
       wake();
     },
 

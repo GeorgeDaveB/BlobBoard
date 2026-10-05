@@ -102,7 +102,7 @@ export const tests = {
     assertEqual([store.item(kid).parentId, store.item(other).x], [g, 10]);
   },
 
-  'expand: one group per level, nested inside, tap again collapses': () => {
+  'expand: one per level, nested inside, tap again collapses, any item can expand': () => {
     const { store } = setup();
     const a = store.createItem({});
     const b = store.createItem({});
@@ -115,28 +115,23 @@ export const tests = {
     store.toggleExpand(a1);
     assertEqual(store.ui.expanded, [a, a1], 'nested');
     store.toggleExpand(b);
-    assertEqual(store.ui.expanded, [b], 'other top-level group replaces (C2)');
+    assertEqual(store.ui.expanded, [b], 'other top-level item replaces (C2)');
     store.toggleExpand(b);
     assertEqual(store.ui.expanded, [], 'tap again collapses');
     store.toggleExpand(lonely);
-    assertEqual(store.ui.expanded, [], 'no inside items: nothing to expand');
+    assertEqual(store.ui.expanded, [lonely], 'items with nothing inside expand too (full notes + add tile)');
   },
 
-  'boards: open inside, path, and screen state repaired after delete': () => {
+  'expanded path is repaired when an expanded item is deleted or moved': () => {
     const { store } = setup();
     const a = store.createItem({});
     const a1 = store.createItem({ parentId: a });
-    store.createItem({ parentId: a1 });
-    store.openBoard(a);
-    assertEqual(store.boardPath(), [null, a]);
+    store.toggleExpand(a);
     store.toggleExpand(a1);
-    assertEqual(store.ui.expanded, [a1]);
-    store.openBoard(null);
-    assertEqual(store.ui.expanded, [], 'changing board collapses');
-    store.openBoard(a1);
-    assertEqual(store.boardPath(), [null, a, a1]);
+    store.reparentItem(a1, null, 0, 0);
+    assertEqual(store.ui.expanded, [a], 'moved out -> no longer under a');
     store.deleteItem(a);
-    assertEqual(store.ui.boardId, null, 'deleted board -> back to the top level');
+    assertEqual(store.ui.expanded, []);
   },
 
   'delete removes everything inside and touching lines; undo restores': () => {

@@ -1,8 +1,8 @@
-// The canvas you see: pan/zoom, rendering the current board's items by id
-// (with trays for an expanded group), dragging, grouping drops, auto-pan.
+// The canvas you see: pan/zoom, rendering top-level items by id (with the
+// tray of an expanded item), dragging, grouping drops, auto-pan.
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, itemRect } from '../services/geometry.js';
 import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps } from '../services/layout.js';
-import { childrenOf, descendantsOf, ancestorsOf } from '../core/model.js';
+import { childrenOf, descendantsOf } from '../core/model.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
 import { renderTray, disposeTray } from './tray.js';
 import { attachGestures } from './gestures.js';
@@ -13,7 +13,7 @@ const EDGE_SPEED = 14;  // max auto-pan speed (px per frame)
 const DOT = 24;         // background dot spacing at zoom 1
 const ARM_MS = 500;     // hold over a blob this long to drop *into* it
 
-export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpty, onViewChange }) {
+export function createBoard({ host, store, onEdit, onAddInside, onCreateAt, onTapEmpty, onViewChange }) {
   const boardEl = document.createElement('div');
   boardEl.className = 'board';
   const world = document.createElement('div');
@@ -73,8 +73,7 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
 
   function boardItems() {
     const doc = store.canvas();
-    const b = store.ui.boardId;
-    return doc ? Object.values(doc.items).filter(it => it.parentId === b) : [];
+    return doc ? Object.values(doc.items).filter(it => it.parentId === null) : [];
   }
 
   // ---- rendering ------------------------------------------------------------
@@ -83,13 +82,13 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
     const ui = store.ui;
     const seen = new Set();
     allEls.clear();
-    const trayCtx = { doc, ui, onEdit, onOpen, register: (id, el) => allEls.set(id, el) };
+    const trayCtx = { doc, ui, onEdit, onAdd: onAddInside, register: (id, el) => allEls.set(id, el) };
 
     for (const item of boardItems()) {
       seen.add(item.id);
       let el = els.get(item.id);
       if (!el) {
-        el = createItemEl(item, { onEdit, onOpen });
+        el = createItemEl(item, { onEdit });
         els.set(item.id, el);
         itemsLayer.append(el);
         ro.observe(el._parts.body);
@@ -102,7 +101,7 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
         positionEl(el, item.x, item.y);
         el.style.zIndex = expanded ? 900000 : item.z;
       }
-      // Tray (expanded group)
+      // Tray (expanded item)
       if (expanded) {
         if (!el._tray) {
           el._tray = document.createElement('div');
@@ -127,15 +126,13 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
       sizes.delete(id);
     }
     hint.hidden = seen.size > 0;
-    hint.textContent = ui.boardId
-      ? 'Drag items onto the breadcrumb or here, or press + to add one inside'
-      : 'Double-tap empty space or press + to add an item';
+    hint.textContent = 'Double-tap empty space or press + to add an item';
   }
 
   // ---- dragging -----------------------------------------------------------
   // drag = { id, el (what moves: the board item, or a ghost for a mini),
   //          ghost, miniEl, size, grabX, grabY, px, py, x, y,
-  //          banned (ids it can't be dropped into), hoverId, armedId, crumb }
+  //          banned (ids it can't be dropped into), hoverId, armedId }
   function updateDrag() {
     const r = rect();
     const wp = screenToWorld(view, drag.px - r.left, drag.py - r.top);
@@ -154,7 +151,7 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
     const now = new Map();
     const mine = [];
     for (const [id, el] of els) {
-      if (id === drag.id) continue;
+      if (id === drag.id || id === drag.armedId) continue; // armed target swells instead
       const it = store.item(id);
       if (!it) continue;
       const c = ellipseContact(ellipseOf(it, sizeOf(id)), me);
@@ -173,12 +170,10 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
     touching = new Map();
   }
 
-  // What is under the finger: a breadcrumb part, a blob (board or mini), a
-  // tray's background, or empty board.
+  // What is under the finger: a blob (board or mini), a tray's background,
+  // or empty board.
   function hitTest(x, y) {
     for (const e of document.elementsFromPoint(x, y)) {
-      const crumb = e.closest('[data-crumb]');
-      if (crumb) return { kind: 'crumb', id: crumb.dataset.crumb || null, el: crumb };
       const it = e.closest('.item');
       const tr = e.closest('.tray');
       if (tr && (!it || !tr.contains(it))) return { kind: 'tray' };
@@ -189,13 +184,6 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
       if (e === boardEl) return { kind: 'empty' };
     }
     return { kind: 'outside' };
-  }
-
-  function setCrumbHover(el) {
-    if (drag.crumbEl === el) return;
-    if (drag.crumbEl) drag.crumbEl.classList.remove('drop-here');
-    drag.crumbEl = el || null;
-    if (el) el.classList.add('drop-here');
   }
 
   function disarm() {
@@ -210,7 +198,6 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
   function updateTarget() {
     const hit = hitTest(drag.px, drag.py);
     drag.hit = hit;
-    setCrumbHover(hit.kind === 'crumb' ? hit.el : null);
     const target = hit.kind === 'item' && !drag.banned.has(hit.id) ? hit.id : null;
     if (target === drag.hoverId) return;
     disarm();
@@ -222,9 +209,21 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
       if (!el) return;
       drag.armedId = target;
       el.classList.add('drop-target');
-      el._phys.swell(true);
+      el._phys.setContacts([]);
+      el._phys.swell(true, swellToShow(el));
       if (navigator.vibrate) navigator.vibrate(20);
     }, ARM_MS);
+  }
+
+  // How much an armed target must puff up so its edge shows all around the
+  // blob being held (title and notes included), so you can see which one
+  // you're about to drop into.
+  function swellToShow(targetEl) {
+    const t = targetEl._parts.body.getBoundingClientRect();
+    const h = drag.el._parts.body.getBoundingClientRect();
+    const margin = 26;
+    const s = Math.max(1.12, (h.width + margin) / Math.max(1, t.width), (h.height + margin) / Math.max(1, t.height));
+    return isFinite(s) ? Math.min(3, s) : 1.12;
   }
 
   function autoPanTick() {
@@ -250,7 +249,7 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
     const wp = screenToWorld(view, sx - r.left, sy - r.top);
     const banned = new Set([id, ...descendantsOf(doc, id)]);
     if (item.parentId) banned.add(item.parentId);
-    const base = { id, px: sx, py: sy, banned, hoverId: null, armedId: null, crumbEl: null, armTimer: 0 };
+    const base = { id, px: sx, py: sy, banned, hoverId: null, armedId: null, armTimer: 0 };
 
     if (els.has(id)) {
       // A blob on this board: move it directly. An expanded group closes first.
@@ -262,7 +261,7 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
       // A mini inside a tray: lift a full-size copy ("ghost") out of the tray.
       const miniEl = allEls.get(id);
       if (!miniEl) return;
-      const ghost = createItemEl(item, { onEdit, onOpen });
+      const ghost = createItemEl(item, { onEdit });
       updateItemEl(ghost, item, { kids: childrenOf(doc, id) });
       ghost.classList.add('ghost');
       ghost.style.zIndex = 1000000;
@@ -287,7 +286,6 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
     const armedId = d.armedId;
     disarm();
     d.armedId = armedId; // drop() still needs to know what was armed
-    setCrumbHover(null);
     clearContacts();
     d.el._phys.setContacts([]);
     d.el._phys.drop();
@@ -322,31 +320,12 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
     }
   }
 
-  // Where to put an item moved up to board `boardId` via the breadcrumb:
-  // next to the group it came out of (that group is on that board).
-  function spotOnAncestorBoard(doc, id, boardId) {
-    const anc = ancestorsOf(doc, id).find(a => doc.items[a] && doc.items[a].parentId === boardId);
-    const near = anc ? doc.items[anc] : null;
-    const rects = childrenOf(doc, boardId).map(c => itemRect(c, NEW_ITEM_SIZE));
-    return near ? findFreeSpot(rects, near.x + NEW_ITEM_SIZE.w + 30, near.y) : findFreeSpot(rects, 0, 0);
-  }
-
   function drop(d) {
     const doc = store.canvas();
     const item = store.item(d.id);
     const hit = d.hit || { kind: 'outside' };
-    const boardId = store.ui.boardId;
 
-    // 1. Onto a breadcrumb part: move up to that level.
-    if (hit.kind === 'crumb') {
-      if (hit.id !== item.parentId && hit.id !== d.id) {
-        const p = spotOnAncestorBoard(doc, d.id, hit.id);
-        store.reparentItem(d.id, hit.id, p.x, p.y);
-      }
-      render();
-      return;
-    }
-    // 2. Held over a blob long enough: put it inside.
+    // 1. Held over a blob long enough: put it inside.
     if (d.armedId && hit.kind === 'item' && hit.id === d.armedId) {
       const p = spotInside(childrenOf(doc, d.armedId));
       store.reparentItem(d.id, d.armedId, p.x, p.y);
@@ -354,21 +333,22 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
       render();
       return;
     }
-    // 3. On the board (empty space, or over a blob without holding): land
-    //    there and push others aside.
-    if (hit.kind === 'empty' || hit.kind === 'item') {
+    // 2. On the board (empty space, or over a top-level blob without
+    //    holding): land there and push others aside.
+    const overMini = hit.kind === 'item' && hit.el && hit.el.classList.contains('mini');
+    if (hit.kind === 'empty' || (hit.kind === 'item' && !overMini)) {
       const pushes = pushesFor(d.id, d.x, d.y, d.size);
       const from = new Map(pushes.map(m => [m.id, { x: store.item(m.id).x, y: store.item(m.id).y }]));
-      if (item.parentId === boardId) {
+      if (item.parentId === null) {
         store.moveItems([{ id: d.id, x: d.x, y: d.y }, ...pushes], { raise: d.id });
       } else {
-        store.reparentItem(d.id, boardId, d.x, d.y, { pushes }); // out of its group
+        store.reparentItem(d.id, null, d.x, d.y, { pushes }); // out of its group
       }
       render();
       glide(pushes, from);
       return;
     }
-    // 4. Anywhere else (a tray's background, outside the board): snap back.
+    // 3. Anywhere else (a tray, outside the board): snap back.
     render();
   }
 
@@ -376,11 +356,13 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
   const elFor = id => allEls.get(id);
 
   attachGestures(boardEl, {
+    // Tap selects; tapping the selected item again (or a quick double
+    // click) expands it fully, and once more collapses it.
     tapItem: id => {
       const el = elFor(id);
       if (el) el._phys.poke(0.06);
-      store.select(id);
-      store.toggleExpand(id);
+      if (store.ui.selectedId === id) store.toggleExpand(id);
+      else store.select(id);
     },
     contextItem: id => { store.select(id); onEdit(id); },
     holdStart: id => {
@@ -455,7 +437,7 @@ export function createBoard({ host, store, onEdit, onOpen, onCreateAt, onTapEmpt
 
   // Birth animation for an item the user just created: grows from a dot.
   function spawn(id) {
-    const el = els.get(id);
+    const el = allEls.get(id) || els.get(id);
     if (el) el._phys.spawn();
   }
 

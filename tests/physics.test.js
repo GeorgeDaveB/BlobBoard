@@ -115,6 +115,29 @@ export const tests = {
     t.done();
   },
 
+  'swell: an armed target puffs up to the requested size, then settles': () => {
+    const t = make();
+    t.h.swell(true, 1.8);
+    let maxA = 0;
+    for (let i = 0; i < 120; i++) { frames(1); const m = matrixOf(t.layer); if (m) maxA = Math.max(maxA, m.a); }
+    assert(maxA > 1.7, 'reaches ~1.8x: ' + maxA.toFixed(2));
+    t.h.swell(false);
+    frames(500);
+    assert(t.layer.style.transform === '', 'settles after disarm');
+    t.done();
+  },
+
+  'roundness: lower value makes a squarer outline, and stays after settling': () => {
+    const t = make();
+    frames(1);
+    const before = radii(t.body);
+    t.h.setRoundness(0.42);
+    frames(300);
+    const r = radii(t.body);
+    assert(r.TLx < before.TLx * 0.6, 'corners much tighter: ' + r.TLx + ' vs ' + before.TLx);
+    t.done();
+  },
+
   'performance: 100 on-screen blobs morph in under 3 ms per frame': () => {
     const many = [];
     for (let i = 0; i < 100; i++) many.push(make());

@@ -37,7 +37,7 @@
 | **Blob / Card** | The two looks of an item: an organic animated shape, or a rounded Pinterest-style card with a picture. |
 | **Mini shapes** | The up-to-6 little wobbly shapes (2 rows × 3) under a collapsed group. |
 | **Tray** | The expanded view: a group's inside items shown smaller underneath it. |
-| **Inside board** | The full-size board of a group's inside items, opened with ⤢. |
+| **Expanded** | An item opened in place (tap it again once selected): its whole description shows and its tray appears underneath. (Separate "inside boards" are parked — see §17.) |
 | **Link** | A line connecting two items on the same board, with optional arrowheads at either end. |
 
 ---
@@ -57,7 +57,7 @@ Numbered so the build phases and tests can refer to them.
 - **R6** Colour: 8 base colours + a drag colour picker.
 - **R7** Thumbnails picked from pictures on the device (multi-file picker) into a shared picture library.
 - **R8** Look: animated organic blob. Thumbnails toggle ON → items that have a thumbnail become rounded Pinterest cards, the rest stay blobs. OFF → everything is a blob. The change animates.
-- **R9** Notes: the item grows to fit its notes up to a maximum size, then cuts off with "…". The full text shows in the editor.
+- **R9** Notes: the item grows to fit its notes; collapsed it shows up to 4 lines, then "…" — text never shows outside the outline. Fully expanded (R16) it shows the whole description.
 - **R10** Tags: reusable, chosen from a dropdown. Typing a new one creates it, and it's available from then on. Shown as chips on the item. A list to rename/delete tags. Shared across all canvases.
 - **R11** Tag filter on the board.
 
@@ -66,9 +66,10 @@ Numbered so the build phases and tests can refer to them.
 - **R13** Items are draggable.
 - **R14** Drag an item onto another and hold ~0.5 s → the target swells → drop puts the item inside it.
 - **R15** A collapsed group shows up to 6 mini shapes (2 rows × 3) just below it, tinted with the inside items' colours, plus a count badge on the corner: exact count 1–6, then "6+".
-- **R16** Tap a group → it expands and its inside items appear underneath it, smaller, with their real title, colour and thumbnail — all of them, in rows of 3–4. Tap again → collapse. Tap a small one → it expands the same way.
+- **R16** Tap selects an item. Tapping the **selected** item again (or a quick double-click) **expands it fully**: the whole description shows (the outline morphs into a rounded card so it fits) and its inside items appear underneath, smaller (real title, colour, thumbnail), all of them, in rows of 3–4, followed by a **+ tile** that adds a new item inside it. Tap again → collapse. Inside the tray, minis work the same way (tap to select, tap again to expand).
 - **R17** Drag a small one out onto the canvas → it leaves the group.
-- **R18** ⤢ opens a full-size inside board where the inside items can be arranged and connected. A breadcrumb trail goes back up; dropping an item on a breadcrumb moves it to that level.
+- **R18** ~~Inside boards (⤢), breadcrumb~~ — **parked** (2026-10-05). Everything happens on the one canvas: items are added inside an expanded item with its + tile, taken out by dragging a mini out of the tray.
+- **R26** While a dragged blob is held over another (arming), the target swells enough that its edge shows **all around the held blob** (title and notes included), so you can see which blob you're dropping into.
 - **R19** ✎ or long-press → edit the item.
 - **R20** Duplicate an item into a canvas (any canvas, including the current one) with everything inside it, all its text included. Also "Move to canvas…".
 
@@ -89,7 +90,7 @@ Please check these. Each one is easy to change now and harder later.
 
 | # | Choice | Why |
 |---|---|---|
-| **C1** | ✎, ⤢ and the connect dot appear when you **hover** (PC) or **tap** (phone) an item, not all the time. | Keeps the board clean. Touch screens have no hover. Long-press still opens the editor directly. |
+| **C1** | ✎ and the connect dot appear when you **hover** (PC) or **tap** (phone) an item, not all the time. | Keeps the board clean. Touch screens have no hover. Long-press still opens the editor directly. |
 | **C2** | Only **one top-level group is expanded at a time** on a board (expanding another one collapses the first). Expanding further inside it is unlimited. | Two open trays would overlap each other on a free canvas. |
 | **C3** | A selected line also gets an **× button in the middle** to delete it. | You need a way to remove a line; it wasn't specified. |
 | **C4** | The **thumbnails toggle is per canvas** (and syncs). | Lets one canvas be visual and another plain. |
@@ -329,21 +330,21 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 **`ui/app.js` — shell, navigation, back button**
 - The address bar records where you are (`#/canvasId/insideItemId`), so a reload reopens the same board.
-- Keeps a **back stack**: open sheet or menu → expanded tray → inside board → canvas. Android's back gesture (and Esc on PC) closes the top layer first instead of exiting the app.
+- Keeps a **back stack**: open sheet or menu → expanded tray → canvas. Android's back gesture (and Esc on PC) closes the top layer first instead of exiting the app.
 - **One window edits at a time** (Web Locks API). If BlobBoard is open in a second tab or window, that one shows "Open in another window — Use here", so two windows can't overwrite each other.
 - Shows "Update available — Reload" when a new version has been deployed.
 
-**`ui/topBar.js`** — compact enough for a phone; on narrow screens the breadcrumb collapses to "‹ Parent".
+**`ui/topBar.js`** — compact enough for a phone (in phase 1–5 just the canvas name and tools; the switcher arrives in phase 6).
 - **Canvas switcher** `[≡ Life ▾]` → list of canvases + New, Rename, Duplicate, Delete, Export file, Export picture, Import file.
-- **Breadcrumb** `Life › Health › Gym` — each part is also a **drop target**: drop an item on it to move the item up to that level.
+- ~~Breadcrumb~~ — parked with inside boards.
 - Tag filter button, thumbnails toggle (per canvas), undo/redo, sync status pill, settings ⚙.
 
 **`ui/board.js` — the canvas you see**
 - Shows one board at a time. A "world" layer is moved with `translate + scale` (pan, zoom 20%–250%, a "fit to screen" button).
-- Layers, bottom to top: dotted background → SVG lines → items (with their trays) → controls overlay (✎ ⤢ ● and the line's + / − / ×). Controls are drawn at a fixed screen size so they stay tappable at any zoom.
+- Layers, bottom to top: dotted background → SVG lines → items (with their trays) → controls overlay (✎ ● and the line's + / − / ×). Controls are drawn at a fixed screen size so they stay tappable at any zoom.
 - Redraws by id: only items that changed are redrawn.
 - Pauses blob animation for items off screen and while you pan or zoom.
-- An empty inside board shows a hint: "Drag items here or tap +".
+- An empty canvas shows a hint: "Double-tap empty space or press + to add an item".
 
 **`ui/itemView.js` — one item**
 - Builds the blob or card (per R8), title, notes (cut off with "…"), up to 3 tag chips (+N more), ✓ when done, mini shapes + badge when collapsed, the tray when expanded.
@@ -356,7 +357,8 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 - A panel floating under the group, above other items, with a soft shadow. Holds all inside items as minis, wrapping 3–4 per row.
 - Tap a mini → it expands inside the tray (nested). Tap again → collapse.
 - Minis drag like any item: out onto empty board = leave the group; onto another item (held) = go inside that item.
-- No lines inside trays (lines live on the inside board). Minis have no connect dot.
+- No lines inside trays. Minis have no connect dot.
+- The tray ends with a **+ tile** (R16) that creates a new item inside, with the birth animation, and opens the editor.
 
 **`ui/linksLayer.js` — lines (R21–R23)**
 - Straight lines from edge to edge; arrowheads (SVG markers) at either end.
@@ -381,17 +383,17 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 - Phase 3b adds a **selecting** state: in Select mode, moving from `emptyPress` starts the box instead of panning (same on PC and phone); from then on moving the pointer resizes the box. Pinch and wheel are unaffected.
 - Stops the browser interfering: no page scrolling, no pull-to-refresh, no double-tap zoom, no text selection, no Android long-press menu on the board.
 
-**`ui/dragDrop.js` — where a dragged item lands (R14, R17, R18)**
+**`ui/dragDrop.js` — where a dragged item lands (R14, R17, R26)**
 - While dragging, finds what's under the finger, ignoring the dragged item and everything inside it (so a group can't be dropped into itself).
 - Over an item for 500 ms → the target **swells** (plus a tiny vibration on Android) = armed. Moving off disarms it.
-- Drop on an armed item → `reparentItem`: lines removed, placed in a free spot on that item's inside board, added to the end of its tray.
-- Drop on a breadcrumb part → move to that level. Drop on empty board → move there (and leave its group if it came from a tray). Drop anywhere else → snaps back.
+- Drop on an armed item → `reparentItem`: lines removed, added to the end of its tray. While armed, the target swells to show around the held blob (R26).
+- Drop on empty board → move there (and leave its group if it came from a tray). Drop anywhere else (a tray, a mini without holding) → snaps back.
 - Auto-scrolls the board when you drag near the screen edge (needed on phones).
 - Drawing a line only accepts items on the same board; anything else shows "not allowed".
 
 **`ui/editSheet.js` — the editor (R5, R9, R19, R20)**
 - Bottom sheet on phone, side panel on PC. Fields: title, notes, tags, colour, thumbnail, done.
-- Actions: Open inside ⤢, Duplicate to canvas…, Move to canvas…, Delete.
+- Actions: Duplicate to canvas…, Move to canvas…, Delete.
 - Changes apply live (you see the item update behind the sheet); one undo step per opening.
 - A new item stays when the editor closes, even if untitled (R25).
 - Stays above the Android keyboard: the page resizes for the keyboard and the focused field scrolls into view.
@@ -425,22 +427,22 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 - **Mode button** (`topBar.js`): ✋ Pan / ⬚ Select, H / V on PC, saved in device settings.
 - **`ui/selection.js`** — the selection box (a dashed, softly tinted rounded rectangle drawn in screen space), hit-testing items against it (an item is selected if the box *touches* its outline, like Windows), and the selected-set in the store's screen state (`ui.selectedIds`). Shows a small bar: "3 selected · Delete · ✕".
 - **Moving many:** dragging any selected item moves all of them, keeping their spacing. Each gets the liquid "air" physics. On drop, all moved items are treated as fixed and only *other* blobs are pushed aside (`resolveOverlaps` takes a set of fixed ids). One undo step.
-- **Dropping many onto an item** (held 0.5 s) puts them all inside it; each one's lines are removed (R23). Dropping many onto a breadcrumb moves them all to that level.
+- **Dropping many onto an item** (held 0.5 s) puts them all inside it; each one's lines are removed (R23).
 - **Delete** (key or bar button) removes all selected items, asking first if any of them has items inside. One undo step.
 - **Store actions:** `moveItems` (exists), plus `reparentItems` and `deleteItems` (batch versions, one undo step each).
-- **Limits:** only items on the board you're viewing can be box-selected (not minis inside a tray). ✎ and ⤢ are hidden while more than one item is selected. Tap empty space or Esc clears the selection.
+- **Limits:** only items on the board you're viewing can be box-selected (not minis inside a tray). ✎ is hidden while more than one item is selected. Tap empty space or Esc clears the selection.
 
 ## 9. Interaction spec
 
 | Where | PC | Phone | Result |
 |---|---|---|---|
-| Item | click | tap | select (shows ✎ ⤢ ●); if it's a group, also expand / collapse |
+| Item | click | tap | select (shows ✎ ●) |
+| Selected item | click again / double-click | tap again | expand fully (whole notes + tray with + tile); again → collapse |
+| + tile in a tray | click | tap | new item inside that item |
 | Item | right-click, or ✎ | long-press then release, or ✎ | open the editor |
 | Item | drag | drag | move |
-| Item dragged over another item, held 0.5 s | | | target swells → drop = put inside |
-| Item dropped on a breadcrumb part | | | move to that level |
+| Item dragged over another item, held 0.5 s | | | target swells to show around the held blob → drop = put inside |
 | Mini (in a tray) dropped on empty board | | | leaves the group, lands where dropped |
-| ⤢ | click | tap | open the inside board |
 | ● dot dragged to another item on the same board | | | new line |
 | Line | click | tap | select → + / − at each end, × in the middle |
 | Empty board, Pan mode | drag | one-finger drag | pan |
@@ -453,7 +455,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 | Item | Ctrl/Shift + click | — | add / remove that item from the selection |
 | Any selected item | drag | drag | all selected items move together |
 | + button | click | tap | new item in the middle of the screen |
-| Back | Esc | Android back | close sheet → collapse tray → up one level → (exit) |
+| Back | Esc | Android back | close sheet → collapse tray → (exit) |
 | Keyboard | Ctrl+Z / Ctrl+Y undo/redo · Delete removes the selected line or item · Enter edits the selected item | | |
 
 All buttons are at least 40 × 40 px on touch screens.
@@ -611,7 +613,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 |---|---|---|
 | 0 Setup | folder, local server config, test runner; repo + Pages (you); a "hello" page live | page opens on PC and phone |
 | 1 Board basics | model, store, device database, pan/zoom, animated blobs, create/edit (title, notes, colour picker, done), move, undo | items survive a reload; tests pass |
-| 2 Groups | drag-hold-into, mini shapes + badge, trays (nested), drag out, ⤢ inside boards, breadcrumb + drops, back button | R14–R18 checklist passes |
+| 2 Groups | drag-hold-into (target swells around the held blob), mini shapes + badge, tap-again full expansion with tray + add tile (nested), drag minis out, back stack | R14–R17, R26 checklist passes |
 | 3 Lines | connect dot, lines, select, + / − arrows, × delete, removal on regrouping | R21–R23 pass |
 | 3b Multi-select | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
 | 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
@@ -639,5 +641,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 ---
 
 ## 17. Not in v1 (possible later)
+
+**Parked:** inside boards / sub-canvases (⤢ + breadcrumb) — built in phase 2, removed 2026-10-05 at your request; may or may not come back.
 
 Search · due dates / reminders · sharing with other people or live collaboration · dark mode (colours are set up as tokens to make this easy) · picking a whole folder of pictures · uploading from a closed app (Background Sync) · reordering items inside a tray · lines between different levels · iPhone testing.

@@ -6,7 +6,7 @@ import { LIMITS } from '../core/model.js';
 let sessionSeq = 0;
 export const newSessionKey = () => 'edit:' + (++sessionSeq);
 
-export function createEditSheet({ host, store, onRequestClose, onDelete, onOpen }) {
+export function createEditSheet({ host, store, onRequestClose, onDelete }) {
   const sheet = document.createElement('section');
   sheet.className = 'sheet';
   sheet.setAttribute('role', 'dialog');
@@ -44,17 +44,12 @@ export function createEditSheet({ host, store, onRequestClose, onDelete, onOpen 
   doneText.textContent = 'Done';
   doneRow.append(doneBox, doneText);
 
-  const openInside = document.createElement('button');
-  openInside.type = 'button';
-  openInside.className = 'btn btn-wide';
-  openInside.textContent = '⤢ Open inside';
-
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'btn btn-danger btn-wide';
   del.textContent = 'Delete item';
 
-  body.append(field('Title', title), field('Notes', notes), field('Colour', picker.el), doneRow, openInside, del);
+  body.append(field('Title', title), field('Notes', notes), field('Colour', picker.el), doneRow, del);
   sheet.append(head, body);
   host.append(sheet);
 
@@ -102,7 +97,6 @@ export function createEditSheet({ host, store, onRequestClose, onDelete, onOpen 
   }
   doneBtn.addEventListener('click', () => onRequestClose());
   del.addEventListener('click', () => onDelete(itemId));
-  openInside.addEventListener('click', () => onOpen(itemId));
 
   return {
     el: sheet,
