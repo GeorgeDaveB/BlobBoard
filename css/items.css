@@ -6,6 +6,7 @@
   position: absolute;
   left: 0;
   top: 0;
+  width: max-content; /* size from content (capped by the body's max-width), so wrapping inside long words can't shrink it */
   cursor: pointer;
 }
 .item.dragging { cursor: grabbing; pointer-events: none; }
@@ -53,32 +54,35 @@
 }
 
 .item-title {
+  max-width: 100%;
   font-weight: 650;
   font-size: 15px;
   line-height: 1.25;
-  overflow-wrap: break-word;
+  overflow-wrap: break-word; /* whole words size the blob; only over-long words break */
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 .item-title.untitled { opacity: .55; font-style: italic; }
 
 .item-notes {
+  max-width: 72%;     /* keep text well away from the curved edge */
   font-size: 13px;
   line-height: 1.35;
   opacity: .85;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   white-space: pre-line;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
 /* With notes the blob grows: wider, taller, extra padding so text stays
    inside the outline (physics also makes it a bit squarer). A collapsed
-   blob shows up to 4 lines, then "…". */
+   blob shows up to 3 lines of notes (2 of title), then "…". */
+.item.has-notes > .item-jelly > .item-body .item-title { max-width: 84%; overflow-wrap: anywhere; }
 .item.has-notes > .item-jelly > .item-body {
   width: 220px;
   max-width: 240px;
@@ -94,6 +98,7 @@
   padding: 26px 24px;
 }
 .item.expanded > .item-jelly > .item-body .item-notes {
+  max-width: 88%;
   display: block;
   -webkit-line-clamp: unset;
   overflow: visible;
