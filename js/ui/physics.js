@@ -38,11 +38,12 @@ const SPRING = {
   press: [0.16, 0.76],
   flat: [0.16, 0.76],
   size: [0.085, 0.80],
-  glide: [0.075, 0.80]
+  glide: [0.075, 0.80],
+  grow: [0.075, 0.74]   // birth: grows from a dot with overshoot
 };
 
-const KEYS = ['ax', 'ay', 'px', 'py', 'lift', 'q', 'sx', 'sy', 'ox', 'oy', 'fr', 'fl', 'ft', 'fb'];
-const REST = { ax: 0, ay: 0, px: 0, py: 0, lift: 1, q: 0, sx: 1, sy: 1, ox: 0, oy: 0, fr: 0, fl: 0, ft: 0, fb: 0 };
+const KEYS = ['ax', 'ay', 'px', 'py', 'lift', 'q', 'sx', 'sy', 'ox', 'oy', 'fr', 'fl', 'ft', 'fb', 'g'];
+const REST = { ax: 0, ay: 0, px: 0, py: 0, lift: 1, q: 0, sx: 1, sy: 1, ox: 0, oy: 0, fr: 0, fl: 0, ft: 0, fb: 0, g: 1 };
 
 // ---- shared loop ----------------------------------------------------------
 const items = new Set();
@@ -147,6 +148,7 @@ export function createPhysics(layer, body, seed) {
     if (settled) {
       for (const k of KEYS) { s[k] = REST[k]; s['v' + k] = 0; }
       if (lastTransform) { layer.style.transform = ''; lastTransform = ''; }
+      layer.style.opacity = '';
       return;
     }
     // Squeeze along the combined air+press direction: shorter along it,
@@ -160,8 +162,10 @@ export function createPhysics(layer, body, seed) {
       d22 = 1 - m * uy * uy + p * ux * ux;
       d12 = -(m + p) * ux * uy;
     }
-    const kx = s.lift * (1 + s.q) * s.sx;
-    const ky = s.lift * (1 - s.q) * s.sy;
+    const g = Math.max(0.01, s.g);
+    const kx = g * s.lift * (1 + s.q) * s.sx;
+    const ky = g * s.lift * (1 - s.q) * s.sy;
+    layer.style.opacity = s.g < 0.7 ? String(Math.max(0, s.g / 0.7)) : '';
     const h0 = layer.offsetHeight;
     const trail = TUNING.trailPx / TUNING.maxAir;
     const tx = s.ox - s.ax * trail;
@@ -187,6 +191,7 @@ export function createPhysics(layer, body, seed) {
       rest = spring(s, 'sy', 1, SPRING.size) && rest;
       rest = spring(s, 'ox', 0, SPRING.glide) && rest;
       rest = spring(s, 'oy', 0, SPRING.glide) && rest;
+      rest = spring(s, 'g', 1, SPRING.grow) && rest;
       const settled = rest && !s.dragging && contacts.length === 0;
       applyTransform(settled);
       return settled;
@@ -224,6 +229,16 @@ export function createPhysics(layer, body, seed) {
     drop() { s.dragging = false; s.vq += 0.09; wake(); },
 
     poke(amount = 0.06) { s.vq += amount; wake(); },
+
+    // A new item comes into existence: from a dot, springing past full size.
+    spawn() {
+      if (REDUCED.matches) return;
+      s.g = 0.05;
+      s.vg = 0;
+      s.vq = 0.04;
+      applyTransform(false);
+      wake();
+    },
 
     // Old and new layout size: starts from the old size, springs to the new one.
     resized(prev, next) {

@@ -102,6 +102,19 @@ export const tests = {
     t.done();
   },
 
+  'spawn: starts as a faded dot, overshoots full size, then settles': () => {
+    const t = make();
+    t.h.spawn();
+    const first = matrixOf(t.layer);
+    assert(first && first.a < 0.15, 'starts tiny: ' + t.layer.style.transform);
+    assert(parseFloat(t.layer.style.opacity) < 0.2, 'starts faded');
+    let maxA = 0;
+    for (let i = 0; i < 400; i++) { frames(1); const m = matrixOf(t.layer); if (m) maxA = Math.max(maxA, m.a); }
+    assert(maxA > 1.05, 'overshoots: ' + maxA.toFixed(3));
+    assert(t.layer.style.transform === '' && t.layer.style.opacity === '', 'settled');
+    t.done();
+  },
+
   'performance: 100 on-screen blobs morph in under 3 ms per frame': () => {
     const many = [];
     for (let i = 0; i < 100; i++) many.push(make());

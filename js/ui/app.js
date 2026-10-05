@@ -107,6 +107,7 @@ export function mountApp({ root, store, repo, savedView }) {
     const spot = board.freeSpot(x, y);
     const key = newSessionKey();
     const id = store.createItem({ x: spot.x, y: spot.y }, { coalesce: key });
+    board.spawn(id);
     store.select(id);
     openEditor(id, { key, isNew: true });
   }
