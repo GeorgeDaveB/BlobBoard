@@ -83,6 +83,16 @@ export const tests = {
     assertEqual(ancestorsOf(c, 'a').includes('a'), false);
   },
 
+  'sanitize: growth setting defaults to 1 and is kept within 0–3': () => {
+    const fix = g => { const d = newCanvas('x'); d.settings.growth = g; return sanitizeCanvas(d).doc.settings.growth; };
+    assertEqual(fix(undefined), 1);
+    assertEqual(fix('junk'), 1);
+    assertEqual(fix(0), 0);
+    assertEqual(fix(2.5), 2.5);
+    assertEqual(fix(9), 3);
+    assertEqual(newCanvas('y').settings.growth, 1);
+  },
+
   'sanitize: insideView defaults to tray, keeps container': () => {
     const c = newCanvas();
     c.settings.insideView = 'weird';

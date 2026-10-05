@@ -153,7 +153,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const expanded = ui.expanded[0] === item.id;
       const kids = childrenOf(doc, item.id);
       el._kidCount = kids.length;
-      updateItemEl(el, item, { selected: ui.selectedId === item.id, kids, expanded, container });
+      updateItemEl(el, item, { selected: ui.selectedId === item.id, kids, expanded, container, growth: doc.settings.growth });
       allEls.set(item.id, el);
       if (!drag || drag.id !== item.id || drag.ghost) {
         positionEl(el, item.x, item.y);

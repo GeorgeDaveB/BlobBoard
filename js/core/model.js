@@ -10,7 +10,7 @@ export function newCanvas(name, now = Date.now()) {
     schema: SCHEMA,
     id: 'c-' + uuid(),
     name: (name || 'My first canvas').slice(0, LIMITS.name),
-    settings: { thumbnails: true, insideView: 'tray' },
+    settings: { thumbnails: true, insideView: 'tray', growth: 1 },
     createdAt: now,
     updatedAt: now,
     items: {},
@@ -169,6 +169,9 @@ export function sanitizeCanvas(doc) {
   doc.settings.thumbnails = doc.settings.thumbnails !== false;
   // How an expanded item shows what's inside: a tray below it, or inside the blob itself.
   doc.settings.insideView = doc.settings.insideView === 'container' ? 'container' : 'tray';
+  // R30 growth: how many blobs' worth of area each inside item adds (0–3).
+  const gr = Number(doc.settings.growth);
+  doc.settings.growth = isFinite(gr) && doc.settings.growth !== null && doc.settings.growth !== '' ? Math.max(0, Math.min(3, gr)) : 1;
   doc.createdAt = num(doc.createdAt, now);
   doc.updatedAt = num(doc.updatedAt, now);
   if (!doc.items || typeof doc.items !== 'object') doc.items = {};

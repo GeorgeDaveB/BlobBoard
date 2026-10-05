@@ -73,12 +73,20 @@ export const tests = {
     assert(p.x > 200, 'to the right of the last one');
   },
 
-  'growth: each inside item adds one blob of area (sqrt), capped at 3x': () => {
+  'growth: each inside item adds one blob of area (sqrt), capped at 5x': () => {
     assertEqual(growFactor(0), 1);
     assert(near(growFactor(1), Math.SQRT2), '1 inside -> ~1.41x');
     assert(near(growFactor(3), 2), '3 inside -> 2x');
-    assertEqual(growFactor(8), MAX_GROW);
-    assertEqual(growFactor(50), MAX_GROW, 'capped');
+    assertEqual(MAX_GROW, 5);
+    assertEqual(growFactor(24), MAX_GROW);
+    assertEqual(growFactor(500), MAX_GROW, 'capped');
+  },
+
+  'growth: the per-item slider scales it (0 = never grows)': () => {
+    assertEqual(growFactor(10, 0), 1);
+    assert(near(growFactor(1, 3), 2), '1 inside at 3 blobs each -> 2x');
+    assert(near(growFactor(4, 0.5), Math.sqrt(3)));
+    assertEqual(growFactor(2, NaN), growFactor(2), 'bad value -> default');
   },
 
   'contact: none when apart, direction + strength when overlapping': () => {

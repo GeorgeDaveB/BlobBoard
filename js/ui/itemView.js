@@ -97,7 +97,8 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
 
   // ● connect dot: drag it onto another blob to draw a line (gestures.js).
   const link = control('item-link', 'Drag to another item to connect them', '', () => {});
-  link.innerHTML = '<span class="dot" aria-hidden="true"></span>';
+  link.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle class="dot" cx="6" cy="18" r="3.6"/>' +
+    '<path d="M8.5 15.5C11 10 14 8 18.5 6.5"/><path d="M14.5 5.2 19 6.3l-1.6 4.3"/></svg>';
 
   el.append(jellyLayer, link, edit);
   applyBob(body, item.seed);
@@ -184,9 +185,10 @@ export function updateItemEl(el, item, ctx) {
   }
 
   // R30: a closed blob on the board grows as if its inside items had merged
-  // into it: each adds one default blob's area, so size x sqrt(1 + n), max 3x.
-  // Minis keep their grid cell size; open blobs size to their content.
-  const grow = el.classList.contains('mini') || ctx.expanded ? 1 : growFactor(kids.length);
+  // into it: each adds `growth` default blobs of area (canvas setting, 0–3),
+  // so size x sqrt(1 + growth x n), max 5x. Minis keep their grid cell size;
+  // open blobs size to their content.
+  const grow = el.classList.contains('mini') || ctx.expanded ? 1 : growFactor(kids.length, ctx.growth);
   p.body.style.setProperty('--grow', grow);
 
   el.classList.toggle('group', kids.length > 0);
@@ -197,10 +199,11 @@ export function updateItemEl(el, item, ctx) {
   el._phys.setRoundness(container ? 0.16 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
 }
 
-export const MAX_GROW = 3;
+export const MAX_GROW = 5;
 
-export function growFactor(insideCount) {
-  return Math.min(MAX_GROW, Math.sqrt(1 + Math.max(0, insideCount)));
+export function growFactor(insideCount, perItem = 1) {
+  const k = isFinite(perItem) ? Math.max(0, perItem) : 1;
+  return Math.min(MAX_GROW, Math.sqrt(1 + k * Math.max(0, insideCount)));
 }
 
 export function positionEl(el, x, y, extra = '') {

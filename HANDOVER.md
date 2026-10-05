@@ -44,7 +44,7 @@ Rule: **every change lands with (1) code, (2) tests where logic is involved, (3)
 | 8 | Dropbox sync (PKCE, 3-way merge) | planned — owner must create the Dropbox app (DESIGN §16) |
 | 9 | PWA polish (service worker, icons, install) | planned |
 
-Tests: **73 passing** (local + live) as of this update.
+Tests: **75 passing** (local + live) as of this update.
 
 ---
 
@@ -84,6 +84,8 @@ Tests: **73 passing** (local + live) as of this update.
 | 2026-10-05 | **Growth pushes neighbours aside** (minimal chain push), in the drop's undo step; own step when growing on close; never on undo/redo | Owner answered the open question |
 | 2026-10-05 | **Lines = "gooey strings"** (thick at the blobs, thin in the middle, thinner when longer, sagging spring middle) | Owner picked this over straight / soft curve |
 | 2026-10-05 | New line gets an **arrowhead at the end you drag to**; lines **follow an open blob's edge** | Owner picked the recommended options |
+| 2026-10-05 | **Growth slider** in ⚙ (per canvas, `settings.growth` 0–3, default 1) = blobs' worth of area per inside item; **cap raised to 5×** | Owner request; slider doesn't push neighbours |
+| 2026-10-05 | Connect handle shows a dot-with-arrow icon; **app version** shown in ⚙ (`js/version.js`, bump on every deploy) | Owner couldn't find the plain dot (or had a cached old build) |
 | 2026-10-05 | C14 (my choices, flagged): ● dot top-left; colour fades between the two blobs; hint on tapping the dot; messages for invalid targets; Undo toast on line delete | Not specified; easy to change |
 
 ---
@@ -150,7 +152,7 @@ python -m http.server 8000
 ```
 - App: http://localhost:8000/ · Tests: http://localhost:8000/tests/ (must say **ALL PASSED**).
 - Tests are in-browser ES modules (`tests/*.test.js`, list in `tests/index.html`); logic modules are pure and unit-tested; UI flows were checked by dispatching `PointerEvent`s + `tick()` (see gotcha 5).
-- Deploy: commit + `git push origin main` → live in ~1 min (check `/tests/` on the live site).
+- Deploy: bump `APP_VERSION` in `js/version.js`, commit + `git push origin main` → live in ~1 min (check `/tests/` on the live site).
 - Roll back: `git revert <commit>` + push. Tag before risky work (`git tag -a name -m … && git push origin name`).
 
 ---

@@ -126,9 +126,10 @@ export function createStore({ repo, now = () => Date.now() }) {
       store.setExpanded(chain);
     },
 
-    // Per-canvas settings (e.g. insideView: 'tray' | 'container').
-    setCanvasSetting(key, value) {
-      return commit(null, doc => {
+    // Per-canvas settings (insideView: 'tray' | 'container', growth: 0–3).
+    // opts.coalesce: one undo step for e.g. one slider drag.
+    setCanvasSetting(key, value, opts = {}) {
+      return commit(opts.coalesce, doc => {
         if (doc.settings[key] === value) return false;
         doc.settings[key] = value;
       });
