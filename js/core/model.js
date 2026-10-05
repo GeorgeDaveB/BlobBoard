@@ -110,6 +110,15 @@ export function ancestorsOf(canvas, id) {
   return out;
 }
 
+// Can `id` be put inside `targetId` (null = top level)? Not into itself or
+// anything inside it.
+export function canMoveInto(canvas, id, targetId) {
+  if (!canvas.items[id]) return false;
+  if (targetId === null) return true;
+  if (!canvas.items[targetId] || targetId === id) return false;
+  return !ancestorsOf(canvas, targetId).includes(id);
+}
+
 export function countInside(canvas, id) {
   return childrenOf(canvas, id).length;
 }

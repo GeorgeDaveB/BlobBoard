@@ -1,14 +1,21 @@
-// Builds and updates one item on the board.
-// Structure: .item (position, moved by JS) > .item-jelly (physics transform)
-// > .item-body (outline set by physics + CSS bob). Each layer owns its own
-// `transform`, so dragging, physics and the bob never fight each other.
+// Builds and updates one item (full size on a board, or "mini" inside a tray).
+// Structure:
+//   .item (position, moved by JS)
+//     .item-jelly (physics transform)
+//       .item-body (outline set by physics + CSS bob)
+//       .item-kids (collapsed group: up to 6 mini shapes + count badge)
+//     ✎ / ⤢ controls
+//     .tray (expanded group, top-level items only; see tray.js)
+// Each layer owns its own `transform`, so dragging, physics and the bob never
+// fight each other.
 import { textColorFor } from '../services/color.js';
 import { seededRandom } from '../core/ids.js';
+import { badgeText } from '../core/model.js';
 import { createPhysics } from './physics.js';
 
-export function createItemEl(item, { onEdit }) {
+export function createItemEl(item, { onEdit, onOpen, mini = false }) {
   const el = document.createElement('div');
-  el.className = 'item';
+  el.className = mini ? 'item mini' : 'item';
   el.dataset.id = item.id;
 
   const body = document.createElement('div');
@@ -23,51 +30,89 @@ export function createItemEl(item, { onEdit }) {
   done.setAttribute('aria-hidden', 'true');
   body.append(title, notes, done);
 
-  const edit = document.createElement('button');
-  edit.type = 'button';
-  edit.className = 'item-ctl item-edit';
-  edit.setAttribute('aria-label', 'Edit item');
-  edit.textContent = '✎';
-  edit.addEventListener('click', e => {
-    e.stopPropagation();
-    onEdit(el.dataset.id);
-  });
+  const kids = document.createElement('div');
+  kids.className = 'item-kids';
+  kids.hidden = true;
+  const shapes = document.createElement('div');
+  shapes.className = 'kid-shapes';
+  const badge = document.createElement('span');
+  badge.className = 'kid-badge';
+  kids.append(shapes, badge);
 
   const jellyLayer = document.createElement('div');
   jellyLayer.className = 'item-jelly';
-  jellyLayer.append(body);
-  el.append(jellyLayer, edit);
-  applyMotion(body, item.seed);
-  el._parts = { body, title, notes };
+  jellyLayer.append(body, kids);
+
+  const edit = control('item-edit', 'Edit item', '✎', () => onEdit(el.dataset.id));
+  const open = control('item-open', 'Open inside', '⤢', () => onOpen(el.dataset.id));
+
+  el.append(jellyLayer, edit, open);
+  applyBob(body, item.seed);
+  el._parts = { body, title, notes, kids, shapes, badge };
   el._phys = createPhysics(jellyLayer, body, item.seed);
   return el;
 }
 
+function control(cls, label, text, fn) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'item-ctl ' + cls;
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  b.textContent = text;
+  b.addEventListener('click', e => { e.stopPropagation(); fn(); });
+  return b;
+}
+
 // Bob timing from the seed (same on every device); a negative delay starts
 // each blob at a different point so they don't move in sync.
-function applyMotion(body, seed) {
+function applyBob(body, seed) {
   const r = seededRandom((seed ^ 0x5bd1e995) >>> 0);
   const bd = 5 + r() * 2;
   body.style.setProperty('--bd', bd.toFixed(2) + 's');
   body.style.setProperty('--bdl', (-r() * bd).toFixed(2) + 's');
 }
 
-export function updateItemEl(el, item, { selected }) {
+// ctx: { selected, kids (inside items, in tray order), expanded, armed }
+export function updateItemEl(el, item, ctx) {
+  const p = el._parts;
   const sig = [item.title, item.notes, item.color, item.done].join('\u0001');
   if (el._sig !== sig) {
-    const { body, title, notes } = el._parts;
-    title.textContent = item.title || 'Untitled';
-    title.classList.toggle('untitled', !item.title);
-    notes.textContent = item.notes;
-    notes.hidden = !item.notes;
+    p.title.textContent = item.title || 'Untitled';
+    p.title.classList.toggle('untitled', !item.title);
+    p.notes.textContent = item.notes;
+    p.notes.hidden = !item.notes;
     el.classList.toggle('has-notes', !!item.notes);
     el.classList.toggle('done', item.done);
-    body.style.setProperty('--c', item.color);
-    body.style.setProperty('--tc', textColorFor(item.color));
+    p.body.style.setProperty('--c', item.color);
+    p.body.style.setProperty('--tc', textColorFor(item.color));
     el.setAttribute('aria-label', (item.title || 'Untitled') + (item.done ? ', done' : ''));
     el._sig = sig;
   }
-  el.classList.toggle('selected', selected);
+
+  // Collapsed group: up to 6 mini shapes in the inside items' colours + badge.
+  const kids = ctx.kids || [];
+  const showKids = kids.length > 0 && !ctx.expanded;
+  const kidSig = showKids ? kids.length + ':' + kids.slice(0, 6).map(k => k.color).join(',') : '';
+  if (el._kidSig !== kidSig) {
+    p.kids.hidden = !showKids;
+    if (showKids) {
+      p.shapes.replaceChildren(...kids.slice(0, 6).map((k, i) => {
+        const s = document.createElement('span');
+        s.className = 'kid-shape';
+        s.style.setProperty('--c', k.color);
+        s.style.setProperty('--d', (-i * 0.7).toFixed(1) + 's');
+        return s;
+      }));
+      p.badge.textContent = badgeText(kids.length);
+      p.badge.setAttribute('aria-label', kids.length + ' inside');
+    }
+    el._kidSig = kidSig;
+  }
+
+  el.classList.toggle('group', kids.length > 0);
+  el.classList.toggle('expanded', !!ctx.expanded);
+  el.classList.toggle('selected', !!ctx.selected);
 }
 
 export function positionEl(el, x, y, extra = '') {

@@ -74,6 +74,71 @@ export const tests = {
     assertEqual([store.item(a).x, store.item(b).x], [0, 50]);
   },
 
+  'reparent: goes inside, loses its lines, lands at the end of the tray': () => {
+    const { store } = setup();
+    const g = store.createItem({ title: 'group' });
+    const k1 = store.createItem({ parentId: g });
+    const a = store.createItem({ title: 'a' });
+    const b = store.createItem({ title: 'b' });
+    const doc = store.canvas();
+    doc.links.l1 = { id: 'l1', from: a, to: b, arrowFrom: false, arrowTo: false, createdAt: 1, updatedAt: 1 };
+    assert(store.reparentItem(a, g, 50, 60));
+    const it = store.item(a);
+    assertEqual([it.parentId, it.x, it.y], [g, 50, 60]);
+    assert(it.order > store.item(k1).order, 'end of tray');
+    assertEqual(Object.keys(store.canvas().links).length, 0, 'line removed (R23)');
+  },
+
+  'reparent: refuses loops, and undo restores in one step with pushes': () => {
+    const { store } = setup();
+    const g = store.createItem({ x: 0, y: 0 });
+    const kid = store.createItem({ parentId: g });
+    assertEqual(store.reparentItem(g, kid, 0, 0), false, 'not into its own child');
+    assertEqual(store.reparentItem(g, g, 0, 0), false);
+    const other = store.createItem({ x: 10, y: 10 });
+    store.reparentItem(kid, null, 5, 5, { pushes: [{ id: other, x: 300, y: 10 }] });
+    assertEqual([store.item(kid).parentId, store.item(other).x], [null, 300]);
+    store.undo();
+    assertEqual([store.item(kid).parentId, store.item(other).x], [g, 10]);
+  },
+
+  'expand: one group per level, nested inside, tap again collapses': () => {
+    const { store } = setup();
+    const a = store.createItem({});
+    const b = store.createItem({});
+    const a1 = store.createItem({ parentId: a });
+    store.createItem({ parentId: a1 });
+    store.createItem({ parentId: b });
+    const lonely = store.createItem({});
+    store.toggleExpand(a);
+    assertEqual(store.ui.expanded, [a]);
+    store.toggleExpand(a1);
+    assertEqual(store.ui.expanded, [a, a1], 'nested');
+    store.toggleExpand(b);
+    assertEqual(store.ui.expanded, [b], 'other top-level group replaces (C2)');
+    store.toggleExpand(b);
+    assertEqual(store.ui.expanded, [], 'tap again collapses');
+    store.toggleExpand(lonely);
+    assertEqual(store.ui.expanded, [], 'no inside items: nothing to expand');
+  },
+
+  'boards: open inside, path, and screen state repaired after delete': () => {
+    const { store } = setup();
+    const a = store.createItem({});
+    const a1 = store.createItem({ parentId: a });
+    store.createItem({ parentId: a1 });
+    store.openBoard(a);
+    assertEqual(store.boardPath(), [null, a]);
+    store.toggleExpand(a1);
+    assertEqual(store.ui.expanded, [a1]);
+    store.openBoard(null);
+    assertEqual(store.ui.expanded, [], 'changing board collapses');
+    store.openBoard(a1);
+    assertEqual(store.boardPath(), [null, a, a1]);
+    store.deleteItem(a);
+    assertEqual(store.ui.boardId, null, 'deleted board -> back to the top level');
+  },
+
   'delete removes everything inside and touching lines; undo restores': () => {
     const { store } = setup();
     const a = store.createItem({ title: 'group' });

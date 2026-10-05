@@ -1,7 +1,7 @@
 import { assert, assertEqual } from './runner.js';
 import { PALETTE, normalizeHex, hexToHsv, hsvToHex, textColorFor, contrast, DARK_TEXT, LIGHT_TEXT } from '../js/services/color.js';
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, rectsOverlap, MAX_ZOOM } from '../js/services/geometry.js';
-import { findFreeSpot, ellipseContact, resolveOverlaps, support } from '../js/services/layout.js';
+import { findFreeSpot, ellipseContact, resolveOverlaps, support, spotInside } from '../js/services/layout.js';
 
 const circle = (id, cx, cy, r = 50) => ({ id, cx, cy, a: r, b: r });
 const overlapping = (A, B, gap) => {
@@ -64,6 +64,12 @@ export const tests = {
     const spot = findFreeSpot(taken, 50, 0, 140, 100);
     const r = { x: spot.x - 70, y: spot.y, w: 140, h: 100 };
     assert(!rectsOverlap(r, taken[0], 16), 'no overlap');
+  },
+
+  'spotInside: origin when empty, beside the last item otherwise': () => {
+    assertEqual(spotInside([]), { x: 0, y: 0 });
+    const p = spotInside([{ x: 0, y: 0 }, { x: 200, y: 0 }]);
+    assert(p.x > 200, 'to the right of the last one');
   },
 
   'contact: none when apart, direction + strength when overlapping': () => {

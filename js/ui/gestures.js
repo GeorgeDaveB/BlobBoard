@@ -34,6 +34,10 @@ export function attachGestures(surface, h) {
     lastType = e.pointerType;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (e.target.closest('.item-ctl, [data-no-gesture]')) return;
+    // A tray's background belongs to no item: ignore it (minis inside are fine).
+    const trayEl = e.target.closest('.tray');
+    const hitItem = e.target.closest('.item');
+    if (trayEl && (!hitItem || !trayEl.contains(hitItem))) return;
     try { surface.setPointerCapture(e.pointerId); } catch (_) { /* pointer already gone */ }
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
 

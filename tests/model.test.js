@@ -1,5 +1,5 @@
 import { assert, assertEqual } from './runner.js';
-import { newCanvas, newItem, badgeText, descendantsOf, ancestorsOf, childrenOf, sanitizeCanvas, applyItemPatch } from '../js/core/model.js';
+import { newCanvas, newItem, badgeText, descendantsOf, ancestorsOf, childrenOf, sanitizeCanvas, applyItemPatch, canMoveInto } from '../js/core/model.js';
 import { PALETTE } from '../js/services/color.js';
 import { migrateCanvas } from '../js/core/migrate.js';
 
@@ -46,6 +46,17 @@ export const tests = {
     assertEqual(childrenOf(c, 'a').map(i => i.id), ['c', 'b']);
     assertEqual(descendantsOf(c, 'a').sort(), ['b', 'c', 'd']);
     assertEqual(ancestorsOf(c, 'd'), ['b', 'a']);
+  },
+
+  'canMoveInto: never into itself or anything inside it': () => {
+    const c = canvasWith([
+      { id: 'a', parentId: null }, { id: 'b', parentId: 'a' }, { id: 'c', parentId: 'b' }, { id: 'x', parentId: null }
+    ]);
+    assertEqual(canMoveInto(c, 'a', 'a'), false);
+    assertEqual(canMoveInto(c, 'a', 'c'), false, 'not into a grandchild');
+    assertEqual(canMoveInto(c, 'c', 'x'), true);
+    assertEqual(canMoveInto(c, 'b', null), true);
+    assertEqual(canMoveInto(c, 'a', 'ghost'), false);
   },
 
   'applyItemPatch: ignores unknown fields and bad colours, trims title': () => {

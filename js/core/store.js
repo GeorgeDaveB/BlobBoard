@@ -1,6 +1,6 @@
 // The single source of truth in memory. Only these actions change data, so
 // every change is saved, (later) synced and undoable the same way.
-import { newItem, applyItemPatch, descendantsOf, maxZ } from './model.js';
+import { newItem, applyItemPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
 import { createEmitter } from './events.js';
 
 export const UNDO_LIMIT = 50;
@@ -9,7 +9,9 @@ export function createStore({ repo, now = () => Date.now() }) {
   const canvases = new Map();
   const history = new Map(); // canvasId -> { undo: [], redo: [] }
   const events = createEmitter();
-  const ui = { canvasId: null, selectedId: null };
+  // Screen state (not saved): which board is shown (null = top level), which
+  // groups are expanded (a path: one per level, C2), what is selected.
+  const ui = { canvasId: null, boardId: null, expanded: [], selectedId: null };
 
   function hist(canvasId) {
     let h = history.get(canvasId);
@@ -35,15 +37,34 @@ export function createStore({ repo, now = () => Date.now() }) {
     h.redo.length = 0;
     doc.updatedAt = t;
     repo.saveCanvas(doc);
+    fixUi();
     events.emit({ type: 'data', canvasId });
     return true;
+  }
+
+  // Keeps screen state valid after data changes (deletes, undo, sync):
+  // board still exists, expanded path is still a chain, selection exists.
+  function fixUi() {
+    const doc = canvases.get(ui.canvasId);
+    if (!doc) return;
+    if (ui.boardId && !doc.items[ui.boardId]) ui.boardId = null;
+    const path = [];
+    let parent = ui.boardId;
+    for (const id of ui.expanded) {
+      const it = doc.items[id];
+      if (!it || it.parentId !== parent || !childrenOf(doc, id).length) break;
+      path.push(id);
+      parent = id;
+    }
+    ui.expanded = path;
+    if (ui.selectedId && !doc.items[ui.selectedId]) ui.selectedId = null;
   }
 
   function replaceDoc(canvasId, json) {
     const doc = JSON.parse(json);
     canvases.set(canvasId, doc);
-    if (ui.selectedId && !doc.items[ui.selectedId]) ui.selectedId = null;
     repo.saveCanvas(doc);
+    fixUi();
     events.emit({ type: 'data', canvasId, history: true });
   }
 
@@ -56,6 +77,8 @@ export function createStore({ repo, now = () => Date.now() }) {
       history.clear();
       for (const d of docs) canvases.set(d.id, d);
       ui.canvasId = canvases.has(currentId) ? currentId : (docs[0] && docs[0].id) || null;
+      ui.boardId = null;
+      ui.expanded = [];
       ui.selectedId = null;
     },
 
@@ -70,6 +93,41 @@ export function createStore({ repo, now = () => Date.now() }) {
       if (ui.selectedId === next) return;
       ui.selectedId = next;
       events.emit({ type: 'ui' });
+    },
+
+    // Shows the inside board of `id` (null = top level).
+    openBoard(id) {
+      const doc = canvases.get(ui.canvasId);
+      const next = id && doc && doc.items[id] ? id : null;
+      if (next === ui.boardId) return;
+      ui.boardId = next;
+      ui.expanded = [];
+      ui.selectedId = null;
+      events.emit({ type: 'ui', board: true });
+    },
+
+    setExpanded(path) {
+      if (JSON.stringify(path) === JSON.stringify(ui.expanded)) return;
+      ui.expanded = path.slice();
+      fixUi();
+      events.emit({ type: 'ui' });
+    },
+
+    // Tap on a group: expand it (collapsing any other at the same level), or
+    // collapse it if it's already open. Items without inside items do nothing.
+    toggleExpand(id) {
+      const doc = canvases.get(ui.canvasId);
+      const it = doc && doc.items[id];
+      if (!it) return;
+      let depth;
+      if (it.parentId === ui.boardId) depth = 0;
+      else {
+        const at = ui.expanded.indexOf(it.parentId);
+        if (at < 0) return;
+        depth = at + 1;
+      }
+      if (ui.expanded[depth] === id) store.setExpanded(ui.expanded.slice(0, depth));
+      else if (childrenOf(doc, id).length) store.setExpanded(ui.expanded.slice(0, depth).concat(id));
     },
 
     createItem(fields, opts = {}) {
@@ -114,6 +172,40 @@ export function createStore({ repo, now = () => Date.now() }) {
           if (raised.z < top) raised.z = top + 1;
         }
       });
+    },
+
+    // Puts `id` inside `parentId` (null = top level of the canvas) at (x, y) on
+    // that board. Its lines are removed (R23); it goes to the end of the
+    // tray. `pushes` (blobs moved aside on the target board) are part of the
+    // same undo step. Refuses loops.
+    reparentItem(id, parentId, x, y, opts = {}) {
+      return commit(opts.coalesce, (doc, t) => {
+        const item = doc.items[id];
+        const target = parentId || null;
+        if (!item || !canMoveInto(doc, id, target)) return false;
+        if (item.parentId === target) return false;
+        for (const [lid, ln] of Object.entries(doc.links)) {
+          if (ln.from === id || ln.to === id) delete doc.links[lid];
+        }
+        const siblings = childrenOf(doc, target).filter(s => s.id !== id);
+        item.parentId = target;
+        item.order = siblings.length ? siblings[siblings.length - 1].order + 1 : 0;
+        item.x = Math.round(x);
+        item.y = Math.round(y);
+        item.z = maxZ(doc) + 1;
+        item.updatedAt = t;
+        for (const m of opts.pushes || []) {
+          const p = doc.items[m.id];
+          if (p && p.parentId === target) { p.x = m.x; p.y = m.y; p.updatedAt = t; }
+        }
+      });
+    },
+
+    // Board path from the top level down to the current board: [null, ...ids]
+    boardPath() {
+      const doc = canvases.get(ui.canvasId);
+      if (!doc || !ui.boardId) return [null];
+      return [null, ...ancestorsOf(doc, ui.boardId).reverse(), ui.boardId];
     },
 
     // Deletes the item, everything inside it, and every line touching them.

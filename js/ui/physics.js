@@ -24,6 +24,7 @@ export const TUNING = {
   maxFrontFlat: 0.5,
   trailPx: 8,             // body lags this far behind the finger at max air
   lift: 1.06,             // scale while held
+  swell: 1.12,            // scale of an armed drop target
   contactPress: 0.10,     // squeeze when pressed by another blob
   contactFlat: 0.55,      // flattening of the touching side
   morphFps: 30,
@@ -99,7 +100,7 @@ export function createPhysics(layer, body, seed) {
   // 4 slow oscillators: top/bottom horizontal radii, left/right vertical radii.
   const osc = [0, 1, 2, 3].map(() => ({ A: 6 + r() * 5, w: (Math.PI * 2) / (9000 + r() * 5000), p: r() * Math.PI * 2 }));
 
-  const s = { pvx: 0, pvy: 0, last: null, dragging: false };
+  const s = { pvx: 0, pvy: 0, last: null, dragging: false, swollen: false };
   for (const k of KEYS) { s[k] = REST[k]; s['v' + k] = 0; }
   let contacts = [];
   let lastRadius = '';
@@ -132,6 +133,7 @@ export function createPhysics(layer, body, seed) {
         t.ft = Math.max(0, -uy) * f;
       }
     }
+    if (s.swollen && !s.dragging) t.lift = T.swell;
     for (const c of contacts) {
       t.px += c.ux * c.s * T.contactPress;
       t.py += c.uy * c.s * T.contactPress;
@@ -193,7 +195,7 @@ export function createPhysics(layer, body, seed) {
       rest = spring(s, 'ox', 0, SPRING.glide) && rest;
       rest = spring(s, 'oy', 0, SPRING.glide) && rest;
       rest = spring(s, 'g', 1, s.vg >= 0 && s.g < 1.5 ? SPRING.grow : SPRING.growBack) && rest;
-      const settled = rest && !s.dragging && contacts.length === 0;
+      const settled = rest && !s.dragging && !s.swollen && contacts.length === 0;
       applyTransform(settled);
       return settled;
     },
@@ -230,6 +232,13 @@ export function createPhysics(layer, body, seed) {
     drop() { s.dragging = false; s.vq += 0.09; wake(); },
 
     poke(amount = 0.06) { s.vq += amount; wake(); },
+
+    // Armed drop target puffs up (and settles back when disarmed).
+    swell(on) {
+      if (s.swollen === !!on) return;
+      s.swollen = !!on;
+      wake();
+    },
 
     // A new item comes into existence: from a dot, springing past full size.
     spawn() {

@@ -61,6 +61,15 @@ export function resolveOverlaps(list, fixedId, gap = 10, maxPushes = 400) {
 
 export const NEW_ITEM_SIZE = { w: 140, h: 100 };
 
+// Where an item dropped into a group lands on that group's inside board:
+// to the right of the last item there (or the origin if it's empty).
+export function spotInside(children) {
+  if (!children.length) return { x: 0, y: 0 };
+  const rects = children.map(c => ({ x: c.x - NEW_ITEM_SIZE.w / 2, y: c.y, w: NEW_ITEM_SIZE.w, h: NEW_ITEM_SIZE.h }));
+  const last = children[children.length - 1];
+  return findFreeSpot(rects, last.x + NEW_ITEM_SIZE.w + 30, last.y);
+}
+
 // Finds the nearest spot to (cx, top) where a w x h item doesn't overlap any of
 // `rects`. Position is returned as { x: centre, y: top } like items store it.
 export function findFreeSpot(rects, cx, top, w = NEW_ITEM_SIZE.w, h = NEW_ITEM_SIZE.h, gap = 16) {
