@@ -265,7 +265,9 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
     tip.setAttribute('fill', look.c0);
     g.append(goo, heads, tip);
     svg.append(g);
-    temp = { fromId, g, goo, heads, tip, x: 0, y: 0, targetId: null, ok: false, mid: null, style: look.style, width: look.width };
+    // simple: Light preview — a thin straight arrow that grows from the blob
+    // to the finger (arrowhead on the finger), no physics.
+    temp = { fromId, g, goo, heads, tip, x: 0, y: 0, targetId: null, ok: false, mid: null, style: look.style, width: look.width, simple: !MOTION.drawGoo };
   }
 
   function moveTemp(x, y, targetId, ok) {
@@ -284,12 +286,12 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
     const T = temp.targetId && temp.ok ? geom(temp.targetId) : null;
     const B = T || { cx: temp.x, cy: temp.y, a: 0, b: 0 };
     stepMid(temp, A, B);
-    const s = strandGeometry(A, B, temp.mid, { to: !!T }, temp.style, temp.width);
+    const s = strandGeometry(A, B, temp.mid, { to: !!T || temp.simple }, temp.style, temp.width);
     temp.goo.setAttribute('d', s ? s.d : '');
     temp.heads.setAttribute('d', s ? s.arrows : '');
     temp.tip.setAttribute('cx', temp.x);
     temp.tip.setAttribute('cy', temp.y);
-    temp.tip.style.display = T ? 'none' : '';
+    temp.tip.style.display = T || temp.simple ? 'none' : '';
   }
 
   function endTemp() {
