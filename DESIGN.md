@@ -1,6 +1,6 @@
 # BlobBoard — Design v1
 
-*Status: draft for review · 2026-10-05 · No code written yet.*
+*Living spec · last updated 2026-10-06 · Phases 0–3b are built and live (see [HANDOVER.md](HANDOVER.md) for status, the decision log and how the code works). Where this spec and the code differ, HANDOVER.md and the "as built" notes here describe the code.*
 
 > **In one paragraph:** BlobBoard is an installable web app (PWA) for Windows and Android. You arrange animated "blobs" (items) on free canvases, group them by dropping one into another, connect them with lines and arrows, tag them, and give each a colour or a thumbnail picture. Everything is saved on the device instantly and synced through your Dropbox, so the phone and the PC show the same boards. It is plain HTML/CSS/JavaScript — no framework, no build step — hosted for free on GitHub Pages.
 
@@ -57,7 +57,7 @@ Numbered so the build phases and tests can refer to them.
 - **R6** Colour: 8 base colours + a drag colour picker.
 - **R7** Thumbnails picked from pictures on the device (multi-file picker) into a shared picture library.
 - **R8** Look: animated organic blob. Thumbnails toggle ON → items that have a thumbnail become rounded Pinterest cards, the rest stay blobs. OFF → everything is a blob. The change animates.
-- **R9** Notes: the item grows to fit its notes; collapsed it shows up to 4 lines, then "…" — text never shows outside the outline. Fully expanded (R16) it shows the whole description.
+- **R9** Notes: the item grows to fit its notes; collapsed it shows the first ~3 lines, fading out (title: 2 lines) — text never shows outside the outline. Fully expanded (R16) it shows the whole description. Styling: R32.
 - **R10** Tags: reusable, chosen from a dropdown. Typing a new one creates it, and it's available from then on. Shown as chips on the item. A list to rename/delete tags. Shared across all canvases.
 - **R11** Tag filter on the board.
 
@@ -181,7 +181,14 @@ Please check these. Each one is easy to change now and harder later.
   "schema": 1,
   "id": "c-7f3a…",
   "name": "Life",
-  "settings": { "thumbnails": true },
+  "settings": {
+    "thumbnails": true,          // phase 4
+    "insideView": "tray",        // 'tray' | 'container' (R27)
+    "growth": 1,                 // 0–3 blobs' worth of area per inside item (R30)
+    "lineStyle": "goo",          // default line style: 'goo' | 'straight' (R31)
+    "lineColor": "gradient",     // 'gradient' | 'start' | 'end' | '#rrggbb' (R31)
+    "lineWidth": 1               // thickness multiplier 0.3–3 (R31)
+  },
   "createdAt": 1759650000000,
   "updatedAt": 1759650000000,
   "items": { "<itemId>": { "…": "Item" } },
@@ -229,7 +236,7 @@ Only one link per pair of items. Canvas `settings` also hold `lineStyle` ('goo')
 
 ### 6.5 Device-only (never synced)
 
-Dropbox sign-in tokens, sync bookkeeping (the last-synced version of each file), view position/zoom per board, last opened canvas, motion setting, what's expanded or selected, the active tag filter.
+Dropbox sign-in tokens, sync bookkeeping (the last-synced version of each file), view position/zoom per board (`view:<canvasId>:root`), last opened canvas (`lastCanvasId`), Pan/Select mode (`mode`, C13), motion switches (`motion`, R33), what's expanded or selected, the active tag filter. Stored in IndexedDB's `settings` store via `repo.getSetting/setSetting`.
 
 ### 6.6 Rules the model always enforces (`model.sanitize`)
 
@@ -248,7 +255,7 @@ Run after every load, import and sync merge, so data can never end up broken.
 
 ## 7. Files and folders
 
-✅ = built (as of 2026-10-05, end of phase 3). Everything else is planned for the phase shown.
+✅ = built (as of 2026-10-06, end of phase 3b + R32/R33). Everything else is planned for the phase shown.
 
 ```
 BlobBoard/
@@ -257,23 +264,29 @@ BlobBoard/
 ├─ sw.js                   phase 9 — service worker: offline cache + update prompt
 ├─ config.js               phase 8 — Dropbox App key + redirect URLs (public values, not secrets)
 ├─ css/
-│  ├─ base.css             ✅ colour tokens, top bar, sheets, buttons, toasts, dialogs, settings
-│  ├─ board.css            ✅ board, dotted background, lines + line controls
-│  └─ items.css            ✅ blob body, states, mini shapes + badge, grids (tray/container), controls
+│  ├─ base.css             ✅ colour tokens, top bar, sheets (editors + settings), buttons, toasts, dialogs,
+│  │                          segmented chips, sliders, switches, rich-text editor, select bar, mode button
+│  ├─ board.css            ✅ board, dotted background, lines + labels + line controls, selection box
+│  └─ items.css            ✅ blob body, states, mini shapes + badge, grids (tray/container), controls,
+│                             formatted descriptions, motion classes
 ├─ js/
 │  ├─ main.js              ✅ start-up sequence
+│  ├─ version.js           ✅ APP_VERSION shown in ⚙ (bump on every deploy)
 │  ├─ core/      ✅ store.js · model.js · events.js · ids.js · migrate.js
 │  ├─ persist/   ✅ db.js · localRepo.js
 │  ├─ sync/      phase 8 — dropboxAuth.js · dropboxApi.js · syncEngine.js · merge.js
 │  ├─ services/  ✅ layout.js · geometry.js · color.js · strand.js (gooey-string geometry)
 │  │             phase 4/7 — imageProcessor.js · exportJson.js · exportPng.js
 │  └─ ui/        ✅ app.js · board.js · itemView.js · tray.js · physics.js · gestures.js ·
-│                   linksLayer.js · editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js
-│                phase 3b+ — selection.js · tagPicker.js · imageLibrary.js · canvasMenu.js
+│                   linksLayer.js · lineSheet.js · lineLookFields.js · richText.js · motionPanel.js ·
+│                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js
+│                phase 4+ — tagPicker.js · imageLibrary.js · canvasMenu.js
 ├─ icons/                  phase 9 — app icons (192 px, 512 px, maskable)
-├─ tests/                  ✅ index.html + runner.js + *.test.js (in-browser unit tests)
+├─ tests/                  ✅ index.html + runner.js + smoke/model/services/store/physics/links/select/richtext
+│                             .test.js (in-browser unit tests, 98)
 ├─ README.md               ✅ run locally / deploy
 ├─ HANDOVER.md             ✅ status, decision log, how it works, gotchas — read this first
+├─ CLAUDE.md               ✅ working rules for AI assistants
 └─ DESIGN.md               this file
 ```
 
@@ -283,12 +296,17 @@ BlobBoard/
 - `physics.js` (new) replaced CSS keyframe morphing — see §8.5 and HANDOVER.md.
 - `tray.js` renders both the tray view and the container view grid.
 - `services/strand.js` (new) holds the line shape (edge points, thinning, arrowheads) instead of `geometry.js`, so the PNG export (phase 7) can reuse it.
+- `selection.js` was not split out: the selection box lives in `board.js`, the mode button and selection bar in `app.js`.
+- New UI modules not in the original plan: `lineSheet.js` (line editor), `lineLookFields.js` (style/colour/thickness controls shared by ⚙ and the line editor), `richText.js` (R32), `motionPanel.js` (R33), `version.js`.
+- The address bar does **not** record the board (`#/canvasId/…`): inside boards were parked, and the last canvas comes from the device setting `lastCanvasId`.
 
 ## 8. Modules and components
 
 Each block gives **purpose → responsibilities → challenges it handles**.
 
 ### 8.0 Start-up (`js/main.js`)
+
+*As built (phases 1–3b):* open the device database → load + `sanitizeCanvas` every canvas (first run creates "My first canvas") → open `lastCanvasId` → create the store → `mountApp` → save on hide/close → ask for persistent storage. Steps 1, 3, 5 and 7 below arrive with phases 8–9.
 
 1. Register the service worker (offline support).
 2. Open the device database and upgrade old data if the format changed.
@@ -392,7 +410,16 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 - Shape (`services/strand.js`): ends on the line between the two centres; the resting middle is halfway between the two **edges** (fix 2026-10-05: resting between the centres made the string fold back into big blobs), and a middle that swings inside a blob falls back to rest. Quadratic curve between the blobs' edges (superellipse edge: ellipse for blobs, squarer for open containers). Its middle is a damped spring that rests halfway, hanging down 7% of the length (max 22 px), so it lags and wobbles when blobs move. Width 16 px where it leaves a blob (tucked 8 px under the edge), middle 8 px, thinning past 140 px of length down to 2.4 px. Arrowhead 16 × 20 px, tip on the edge.
 - Updated from the physics frame loop (`onFrame`); positions come from the store (or the live drag), sizes from the measured body, plus each blob's physics offset/squash (`visual()`). Paths are only rewritten when they change.
 - Selected line: white edge, **+** / **−** near each end, **×** in the middle (HTML buttons above the items, constant screen size).
-- Drawing: a temporary string follows the finger from the ● dot; it snaps onto a valid target (white edge on the target), turns grey over an invalid one.
+- Drawing: a temporary line follows the finger from the ↗ handle; it snaps onto a valid target (white edge on the target), turns grey over an invalid one. With "Gooey line preview" off (Light), it is a thin straight arrow growing to the finger, no physics.
+- Labels (text at the middle), the line editor (`lineSheet.js`), thickness, colour modes and hover: see R31.
+
+**`ui/lineSheet.js` — the line editor (R31)** — side pane like the item editor: text, style, colour, thickness (slider + Default), Delete. One opening = one undo step.
+
+**`ui/lineLookFields.js`** — the style / colour / thickness controls, used by ⚙ (canvas defaults) and the line editor (with "Default" choices).
+
+**`ui/richText.js` — styled descriptions (R32)** — `createRichEditor` (toolbar + `contenteditable`), `sanitizeHtml` (allowed subset only), `htmlToPlain`, `notesHtmlOf` (cached display HTML). Used by `editSheet.js` and the container description box in `itemView.js`.
+
+**`ui/motionPanel.js` — ⚙ → Motion (R33)** — the effect list, presets (All on / Light / All off), `defaultMotion()` (touch devices → Light). The switches live in `physics.MOTION`.
 
 **`ui/gestures.js` — one state machine for every finger and mouse**
 
@@ -438,7 +465,7 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 **`ui/canvasMenu.js`** — the canvas actions (R3, R4). Export file: `Life.blobboard.json`. Export picture: `Life-Health-2026-10-05.png`. On Android also offers **Share** (straight to Drive, mail, etc.). Import always creates a **new** canvas with fresh ids, so importing twice on one device can't clash; tags are matched by name; pictures dedupe by fingerprint.
 
-**`ui/settingsSheet.js`** — a **side pane** like the editors (bottom sheet on phones, right panel on PC), not a pop-up; opening the item editor or line editor closes it and vice versa (owner, 2026-10-06). *(as built: line defaults + "Apply to all lines" (R31), per-canvas "Show inside items: Tray / Inside the blob" (R27), "Growth per inside item" slider (R30), app version (`js/version.js`); the rest arrives in later phases)* — Dropbox connect/disconnect + last sync time; motion (Full / Calm / Off, following the device's "reduce motion" setting by default); tag manager; picture library; app version + "Check for update".
+**`ui/settingsSheet.js`** — two tabs: **Canvas** (saved with the canvas) and **Motion** (this device, R33). A **side pane** like the editors (bottom sheet on phones, right panel on PC), not a pop-up; opening the item editor or line editor closes it and vice versa (owner, 2026-10-06). *(as built: line defaults + "Apply to all lines" (R31), per-canvas "Show inside items: Tray / Inside the blob" (R27), "Growth per inside item" slider (R30), app version (`js/version.js`); the rest arrives in later phases)* — Dropbox connect/disconnect + last sync time; motion (Full / Calm / Off, following the device's "reduce motion" setting by default); tag manager; picture library; app version + "Check for update".
 
 **`ui/dialogs.js`** — confirm, rename prompt, toast messages, an "Undo" toast after deletes.
 
@@ -455,6 +482,8 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 *As built:* store `ui.selectedIds` (2+ top-level ids; one item = `selectedId`, as before), actions `selectMany`, `toggleSelected`, `selectedItems`, `reparentItems(moves, parentId, {index, coalesce})`, `deleteItems(ids)`; `layout.resolveOverlaps` takes one id or a set of fixed ids; `layout.ellipseTouchesRect` for the box. The box lives in `board.js` (no separate `selection.js`); the mode button, H/V keys and the "N selected · Delete · ✕" bar live in `app.js`. Dropping a group into an **open grid** also works (at the pointed slot). On a phone there's no Ctrl/Shift, so a new box replaces the selection (PC: Ctrl/Shift at the start of a box adds to it).
 
 
+*Original plan (kept for reference; see "as built" above):*
+
 - **Mode button** (`topBar.js`): ✋ Pan / ⬚ Select, H / V on PC, saved in device settings.
 - **`ui/selection.js`** — the selection box (a dashed, softly tinted rounded rectangle drawn in screen space), hit-testing items against it (an item is selected if the box *touches* its outline, like Windows), and the selected-set in the store's screen state (`ui.selectedIds`). Shows a small bar: "3 selected · Delete · ✕".
 - **Moving many:** dragging any selected item moves all of them, keeping their spacing. Each gets the liquid "air" physics. On drop, all moved items are treated as fixed and only *other* blobs are pushed aside (`resolveOverlaps` takes a set of fixed ids). One undo step.
@@ -467,18 +496,20 @@ Each block gives **purpose → responsibilities → challenges it handles**.
 
 | Where | PC | Phone | Result |
 |---|---|---|---|
-| Item | click | tap | select (shows ✎ ●) |
+| Item | click | tap | select (shows ✎ and ↗) |
 | Selected item | click again / double-click | tap again | expand fully (whole notes + tray with + tile); again → collapse |
 | + tile in a tray / container | click | tap | new item inside that item |
 | Mini in a grid | drag within the grid | drag within the grid | reorder; the others slide aside (R28) |
-| Description box (container) | click | tap | edit it in place; **−** hides it for now |
-| ⚙ | click | tap | Settings: tray or container view (per canvas) |
+| Description box (container) | click | tap | edit it in place with the style toolbar (R32); **−** hides it for now |
+| ⚙ | click | tap | Settings side pane: **Canvas** tab (inside view, growth, line defaults, apply to all lines) · **Motion** tab (effects on/off, this device) |
 | Item | right-click, or ✎ | long-press then release, or ✎ | open the editor |
 | Item | drag | drag | move |
 | Item dragged over another item, held 0.5 s | | | target swells to show around the held blob → drop = put inside |
 | Mini (in a tray) dropped on empty board | | | leaves the group, lands where dropped |
-| ● dot dragged to another item on the same board | | | new line |
-| Line | click | tap | select → + / − at each end, × in the middle |
+| ↗ handle dragged to another item on the same board | | | new line (arrowhead at that end) |
+| Line or its label | click | tap | select → + / − at each end, ✎ and × beside the middle |
+| Selected line (or its label) | click again, or ✎ | tap again, or ✎ | line editor: text, style, colour, thickness, Delete |
+| Line, ✎, ↗ | hover | — | highlight + cursor change (hand / crosshair) |
 | Empty board, Pan mode | drag | one-finger drag | pan |
 | Empty board | mouse wheel / two-finger scroll | — | pan |
 | Empty board | Ctrl + wheel / touchpad pinch | two-finger pinch | zoom (20%–250%) |
@@ -645,11 +676,12 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 
 | Phase | Delivers | Done when |
 |---|---|---|
-| 0 Setup | folder, local server config, test runner; repo + Pages (you); a "hello" page live | page opens on PC and phone |
-| 1 Board basics | model, store, device database, pan/zoom, animated blobs, create/edit (title, notes, colour picker, done), move, undo | items survive a reload; tests pass |
-| 2 Groups | drag-hold-into (target swells around the held blob), mini shapes + badge, tap-again full expansion with tray + add tile (nested), container view option (R27), reorder (R28), drag minis out, back stack | R14–R17, R26–R28 checklist passes |
+| 0 Setup ✅ | folder, local server config, test runner; repo + Pages (you); a "hello" page live | page opens on PC and phone |
+| 1 Board basics ✅ | model, store, device database, pan/zoom, animated blobs, create/edit (title, notes, colour picker, done), move, undo | items survive a reload; tests pass |
+| 2 Groups ✅ | drag-hold-into (target swells around the held blob), mini shapes + badge, tap-again full expansion with tray + add tile (nested), container view option (R27), reorder (R28), drag minis out, back stack | R14–R17, R26–R28 checklist passes |
 | 3 Lines ✅ | connect dot, gooey lines, select, + / − arrows, × delete, removal on regrouping; growth pushes neighbours (R30) | R21–R23 pass |
 | 3b Multi-select ✅ | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
+| 3c Polish ✅ (added) | line look + text + editor (R31), styled descriptions (R32), Motion tab + idle-stopping loop (R33), settings side pane, hover affordances | owner checks on phone |
 | 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
 | 5 Tags | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
@@ -678,4 +710,4 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 
 **Parked:** inside boards / sub-canvases (⤢ + breadcrumb) — built in phase 2, removed 2026-10-05 at your request; may or may not come back.
 
-Search · due dates / reminders · sharing with other people or live collaboration · dark mode (colours are set up as tokens to make this easy) · picking a whole folder of pictures · uploading from a closed app (Background Sync) · reordering items inside a tray · lines between different levels · iPhone testing.
+Search · due dates / reminders · sharing with other people or live collaboration · dark mode (colours are set up as tokens to make this easy) · picking a whole folder of pictures · uploading from a closed app (Background Sync) · lines between different levels (and between inside items) · auto-pan while drawing a line near the screen edge · adding single blobs to a selection on a phone · iPhone testing. *(Reordering items inside a tray was built: R28.)*
