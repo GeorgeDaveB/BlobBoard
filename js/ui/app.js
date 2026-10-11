@@ -3,7 +3,9 @@
 // instead of leaving the app).
 import { createBoard } from './board.js';
 import { createEditSheet, newSessionKey } from './editSheet.js';
-import { initDialogs, toast, confirmDialog } from './dialogs.js';
+import { initDialogs, toast, choiceDialog } from './dialogs.js';
+import { createFormationUI, MIN_SELECTED } from './formationPanel.js';
+import { ringLayout } from '../services/formations.js';
 import { createSettingsSheet } from './settingsSheet.js';
 import { createLineSheet } from './lineSheet.js';
 import { setMotion } from './physics.js';
@@ -19,6 +21,7 @@ const ICONS = {
   zoomOut: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>',
   pan: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5v-6a1.5 1.5 0 0 1 3 0V11M14 10.5V6a1.5 1.5 0 0 1 3 0v5M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.6-2.2L4.6 15.4a1.6 1.6 0 0 1 2.4-2.1L8 14.5"/></svg>',
   select: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" stroke-dasharray="3 2.6"/></svg>',
+  bouncing: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.6"/><circle cx="12" cy="4.2" r="1.9"/><circle cx="19.4" cy="15.6" r="1.9"/><circle cx="4.6" cy="15.6" r="1.9"/></svg>',
   gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
 };
 
@@ -41,7 +44,15 @@ export function mountApp({ root, store, repo }) {
   // C13: Pan / Select mode (only changes what dragging empty space does).
   const btnMode = iconButton('pan', 'Pan mode (H) — tap for Select mode (V)');
   btnMode.classList.add('mode-btn');
-  tools.append(btnMode, sep(), btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), btnGear);
+  // R34: formations. Greyed out until 3+ blobs are selected (still
+  // pressable, to say why).
+  const btnBounce = iconButton('bouncing', 'Bouncing');
+  btnBounce.classList.add('bouncing-btn');
+  const bounceText = document.createElement('span');
+  bounceText.className = 'bouncing-text';
+  bounceText.textContent = 'Bouncing';
+  btnBounce.append(bounceText);
+  tools.append(btnMode, btnBounce, sep(), btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), btnGear);
   top.append(name, tools);
 
   const main = document.createElement('main');
@@ -64,12 +75,17 @@ export function mountApp({ root, store, repo }) {
   selDelete.type = 'button';
   selDelete.className = 'btn btn-danger';
   selDelete.textContent = 'Delete';
+  const selRelease = document.createElement('button');
+  selRelease.type = 'button';
+  selRelease.className = 'btn';
+  selRelease.textContent = 'Release child(s)';
+  selRelease.hidden = true;
   const selClear = document.createElement('button');
   selClear.type = 'button';
   selClear.className = 'icon-btn';
   selClear.setAttribute('aria-label', 'Clear selection');
   selClear.textContent = '✕';
-  selBar.append(selCount, selDelete, selClear);
+  selBar.append(selCount, selRelease, selDelete, selClear);
   root.append(selBar);
 
   // ---- back stack -----------------------------------------------------------
@@ -124,7 +140,8 @@ export function mountApp({ root, store, repo }) {
     host: root,
     store,
     onRequestClose: () => closeLayer(editorLayer),
-    onDelete: id => deleteWithUndo(id)
+    onDelete: id => deleteWithUndo(id),
+    onRelease: id => releaseWithUndo([id])
   });
 
   function viewKey() {
@@ -255,25 +272,75 @@ export function mountApp({ root, store, repo }) {
     openEditor(id, { key, isNew: true });
   }
 
-  // Several items at once (R24): asks first if any has items inside; one
-  // undo step.
-  async function deleteManyWithUndo(ids) {
-    const doc = store.canvas();
-    const live = ids.filter(id => doc.items[id]);
-    if (!live.length) return;
-    const inside = live.reduce((n, id) => n + descendantsOf(doc, id).length, 0);
-    if (inside > 0) {
-      const ok = await confirmDialog({
-        title: 'Delete ' + live.length + ' items?',
-        message: 'Delete ' + live.length + ' items and the ' + inside + ' item' + (inside === 1 ? '' : 's') + ' inside them?',
-        okLabel: 'Delete',
-        danger: true
-      });
-      if (!ok) return;
-    }
-    store.deleteItems(live);
-    toast('Deleted ' + live.length + ' items', { actionLabel: 'Undo', onAction: () => store.undo() });
+  // ---- deleting, Dissolve, Release (R35) -------------------------------------------
+  let opSeq = 0;
+  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+
+  // Rings released blobs round their old parent (or the spot where it
+  // stood), others pushed aside; joins the step `key`.
+  function ringAround(centre, ids, key) {
+    const nodes = ids.map(board.nodeOf).filter(Boolean);
+    if (!centre || !nodes.length) return;
+    board.arrange(ringLayout(centre, nodes), { fixed: store.item(centre.id) ? [centre.id] : [], coalesce: key });
   }
+
+  // "Release child(s)": the direct minis of each blob come out, placed in a
+  // ring round it. One undo step.
+  function releaseWithUndo(ids) {
+    const doc = store.canvas();
+    const n = ids.reduce((s, id) => s + (doc.items[id] ? childrenOf(doc, id).length : 0), 0);
+    if (!n) return;
+    // An open tray of a blob being emptied closes first (it would cover the ring).
+    const at = store.ui.expanded.findIndex(id => ids.includes(id));
+    if (at >= 0) store.setExpanded(store.ui.expanded.slice(0, at));
+    const key = 'release:' + (++opSeq);
+    const groups = store.releaseChildren(ids, { coalesce: key });
+    for (const g of groups) ringAround(board.nodeOf(g.parentId), g.ids, key);
+    toast('Released ' + plural(n, 'blob', 'blobs'), { actionLabel: 'Undo', onAction: () => store.undo() });
+  }
+
+  // Deleting one or more blobs. If any has minis: Dissolve parent (only the
+  // blob goes; its minis are ringed round the spot where it stood) or
+  // Dissolve family (everything inside goes too). One undo step.
+  async function deleteFlow(ids) {
+    const doc = store.canvas();
+    const live = [...new Set(ids)].filter(id => doc.items[id]);
+    if (!live.length) return;
+    const one = live.length === 1;
+    const label = one ? '“' + (doc.items[live[0]].title || 'Untitled') + '”' : plural(live.length, 'item', 'items');
+    const gone = new Set(live);
+    const kids = live.reduce((s, id) => s + childrenOf(doc, id).filter(k => !gone.has(k.id)).length, 0);
+    let mode = 'family';
+    if (kids > 0) {
+      const all = new Set();
+      for (const id of live) for (const d of descendantsOf(doc, id)) if (!gone.has(d)) all.add(d);
+      mode = await choiceDialog({
+        title: 'Delete ' + label + '?',
+        choices: [
+          { label: 'Dissolve parent', value: 'parent', note: (one ? 'Delete only this blob; its ' : 'Delete only these blobs; their ') + plural(kids, 'mini stays', 'minis stay') + ' on the canvas' },
+          { label: 'Dissolve family', value: 'family', kind: 'danger', note: (one ? 'Delete this blob and everything inside it' : 'Delete these blobs and everything inside them') + ' (' + all.size + ')' }
+        ]
+      });
+      if (!mode) return;
+    }
+    if (editor.isOpen && live.some(id => id === editor.itemId || descendantsOf(doc, id).includes(editor.itemId))) closeLayer(editorLayer);
+    if (mode === 'parent') {
+      const spots = new Map(live.map(id => [id, board.nodeOf(id)]).filter(([, n]) => n));
+      const key = 'dissolve:' + (++opSeq);
+      const groups = store.dissolveItems(live, { coalesce: key });
+      for (const g of groups) {
+        const s = spots.get(g.spotId);
+        if (s) ringAround({ ...s, id: '__spot' }, g.ids, key);
+      }
+    } else if (one) {
+      store.deleteItem(live[0]);
+    } else {
+      store.deleteItems(live);
+    }
+    toast('Deleted ' + label, { actionLabel: 'Undo', onAction: () => store.undo() });
+  }
+  const deleteManyWithUndo = ids => deleteFlow(ids);
+  const deleteWithUndo = id => deleteFlow([id]);
 
   // ---- Pan / Select mode (C13), remembered on this device ----------------------
   function setMode(select) {
@@ -288,24 +355,6 @@ export function mountApp({ root, store, repo }) {
   }
   btnMode.addEventListener('click', () => setMode(!board.selectMode));
   repo.getSetting('mode').then(m => setMode(m === 'select')).catch(() => setMode(false));
-
-  async function deleteWithUndo(id) {
-    const item = store.item(id);
-    if (!item) return;
-    const inside = descendantsOf(store.canvas(), id).length;
-    if (inside > 0) {
-      const ok = await confirmDialog({
-        title: 'Delete item?',
-        message: 'Delete “' + (item.title || 'Untitled') + '” and its ' + inside + ' inside item' + (inside === 1 ? '' : 's') + '?',
-        okLabel: 'Delete',
-        danger: true
-      });
-      if (!ok) return;
-    }
-    if (editor.isOpen && editor.itemId === id) closeLayer(editorLayer);
-    store.deleteItem(id);
-    toast('Deleted “' + (item.title || 'Untitled') + '”', { actionLabel: 'Undo', onAction: () => store.undo() });
-  }
 
   function deleteLinkWithUndo(id) {
     if (!store.deleteLink(id)) return;
@@ -322,6 +371,11 @@ export function mountApp({ root, store, repo }) {
     const n = store.ui.selectedIds.length;
     selBar.hidden = n < 2;
     if (n >= 2) selCount.textContent = n + ' selected';
+    selRelease.hidden = !store.ui.selectedIds.some(id => doc.items[id] && childrenOf(doc, id).length > 0);
+    const ready = store.selectedItems().length >= MIN_SELECTED;
+    btnBounce.classList.toggle('is-off', !ready);
+    btnBounce.setAttribute('aria-disabled', String(!ready));
+    btnBounce.title = ready ? 'Bouncing: arrange the selected blobs' : 'Bouncing — select multiple items first';
   }
 
   let shownExpanded = '';
@@ -350,12 +404,18 @@ export function mountApp({ root, store, repo }) {
   btnGear.addEventListener('click', openSettings);
   selDelete.addEventListener('click', () => deleteManyWithUndo(store.ui.selectedIds));
   selClear.addEventListener('click', () => store.select(null));
+  selRelease.addEventListener('click', () => releaseWithUndo(store.ui.selectedIds));
+  btnBounce.addEventListener('click', () => {
+    if (store.selectedItems().length < MIN_SELECTED) { formations.closeMenu(); toast('Select multiple items first'); return; }
+    formations.openMenu(btnBounce);
+  });
   fab.addEventListener('click', () => { const s = board.centerSpot(); createAt(s.x, s.y); });
 
   // ---- keyboard -----------------------------------------------------------
   document.addEventListener('keydown', e => {
     const typing = e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]');
     if (e.key === 'Escape') {
+      formations.closeMenu();
       if (layers.length) closeTopLayer();
       else { store.select(null); store.selectLink(null); }
       return;
@@ -372,6 +432,9 @@ export function mountApp({ root, store, repo }) {
     else if ((e.key === 'Delete' || e.key === 'Backspace') && store.ui.selectedLinkId) { e.preventDefault(); deleteLinkWithUndo(store.ui.selectedLinkId); }
     else if (e.key === 'Enter' && store.ui.selectedId) { e.preventDefault(); openEditor(store.ui.selectedId, { expand: true }); }
   });
+
+  // ---- Bouncing (R34) ----------------------------------------------------------
+  const formations = createFormationUI({ root, store, board, openLayer, closeLayer });
 
   // ---- start --------------------------------------------------------------
   board.render();

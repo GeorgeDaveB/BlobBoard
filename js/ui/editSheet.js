@@ -1,13 +1,13 @@
 // The item editor: bottom sheet on phones, side panel on PC.
 // Changes apply live; one editor session = one undo step.
 import { createColorPicker } from './colorPicker.js';
-import { LIMITS } from '../core/model.js';
+import { LIMITS, childrenOf } from '../core/model.js';
 import { createRichEditor, notesHtmlOf } from './richText.js';
 
 let sessionSeq = 0;
 export const newSessionKey = () => 'edit:' + (++sessionSeq);
 
-export function createEditSheet({ host, store, onRequestClose, onDelete }) {
+export function createEditSheet({ host, store, onRequestClose, onDelete, onRelease }) {
   const sheet = document.createElement('section');
   sheet.className = 'sheet';
   sheet.setAttribute('role', 'dialog');
@@ -47,12 +47,20 @@ export function createEditSheet({ host, store, onRequestClose, onDelete }) {
   doneText.textContent = 'Done';
   doneRow.append(doneBox, doneText);
 
+  // R35: only for a blob that has minis.
+  const release = document.createElement('button');
+  release.type = 'button';
+  release.className = 'btn btn-wide';
+  release.textContent = 'Release child(s)';
+  release.title = 'Take the blobs inside out and place them around it';
+  release.hidden = true;
+
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'btn btn-danger btn-wide';
   del.textContent = 'Delete item';
 
-  body.append(field('Title', title), field('Notes', rich.el), field('Colour', picker.el), doneRow, del);
+  body.append(field('Title', title), field('Notes', rich.el), field('Colour', picker.el), doneRow, release, del);
   sheet.append(head, body);
   host.append(sheet);
 
@@ -85,6 +93,7 @@ export function createEditSheet({ host, store, onRequestClose, onDelete }) {
     if (!rich.isFocused) rich.setHtml(notesHtmlOf(it));
     doneBox.checked = it.done;
     picker.setValue(it.color);
+    release.hidden = !onRelease || childrenOf(store.canvas(), itemId).length === 0;
     autosize();
   }
 
@@ -99,6 +108,7 @@ export function createEditSheet({ host, store, onRequestClose, onDelete }) {
   }
   doneBtn.addEventListener('click', () => onRequestClose());
   del.addEventListener('click', () => onDelete(itemId));
+  release.addEventListener('click', () => { if (onRelease) onRelease(itemId); });
 
   return {
     el: sheet,

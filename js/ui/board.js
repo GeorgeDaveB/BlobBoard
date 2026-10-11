@@ -2,7 +2,7 @@
 // tray of an expanded item), lines between them, dragging, grouping drops,
 // drawing lines, auto-pan.
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, itemRect } from '../services/geometry.js';
-import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps, ellipseTouchesRect } from '../services/layout.js';
+import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps, ellipseTouchesRect, clearFormation } from '../services/layout.js';
 import { childrenOf, descendantsOf, linkProblem } from '../core/model.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
 import { renderTray, disposeTray, syncInline, removeInline } from './tray.js';
@@ -41,6 +41,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   let growKey = null;       // { id, key }: the drop that will make `id` grow
   let selectMode = false;   // C13: empty-space drag draws a selection box
   let box = null;           // selection box in progress: { x0, y0, x1, y1, add, base, hits }
+  let picking = null;       // R34 royalty pick in progress: { resolve }
   const boxEl = document.createElement('div');
   boxEl.className = 'select-box';
   boxEl.hidden = true;
@@ -98,7 +99,24 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
   }
 
   const rect = () => boardEl.getBoundingClientRect();
-  const sizeOf = id => sizes.get(id) || NEW_ITEM_SIZE;
+  // Body size; a blob that was just rendered (e.g. released from a group)
+  // is measured on the spot (forces layout) until the observer reports it.
+  const sizeOf = id => {
+    const known = sizes.get(id);
+    if (known) return known;
+    const el = els.get(id);
+    if (el && el._parts.body.offsetWidth) return { w: el._parts.body.offsetWidth, h: el._parts.body.offsetHeight };
+    return NEW_ITEM_SIZE;
+  };
+  // Fresh measurement (after something changed size this very moment).
+  const measure = id => {
+    const el = els.get(id);
+    if (el && el._parts.body.offsetWidth) {
+      const s = { w: el._parts.body.offsetWidth, h: el._parts.body.offsetHeight };
+      return s;
+    }
+    return sizeOf(id);
+  };
 
   // A blob as drawn right now (position incl. drag, size, physics offset and
   // squash), for the lines. null if it isn't on this board.
@@ -712,8 +730,15 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     // Tap selects; tapping the selected item again (or a quick double
     // click) expands it fully, and once more collapses it.
     tapItem: (id, mods = {}) => {
-      // Ctrl/Shift+click adds or removes a board blob from the selection (R24).
-      if (mods.add && els.has(id)) { store.toggleSelected(id); return; }
+      // R34: picking the royalty — any blob on the board.
+      if (picking) {
+        if (els.has(id)) finishPick(id);
+        else toast('Tap a blob on the canvas (not one inside another)');
+        return;
+      }
+      // Ctrl/Shift+click adds or removes a blob from the selection (R24),
+      // including minis in an open group (R34).
+      if (mods.add && allEls.has(id)) { store.toggleSelected(id); return; }
       const el = elFor(id);
       if (el) el._phys.poke(0.06);
       if (store.ui.selectedId === id) store.toggleExpand(id);
@@ -839,6 +864,76 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     wheelTimer = setTimeout(() => setMoving(false), 150);
   }, { passive: false });
 
+  // ---- formations (R34) and releasing (R35) ---------------------------------
+  // A board blob as a layout node: { id, cx, cy, w, h } (measured now).
+  function nodeOf(id) {
+    const it = store.item(id);
+    if (!it || it.parentId !== null) return null;
+    const s = measure(id);
+    return { id, cx: it.x, cy: it.y + s.h / 2, w: s.w, h: s.h };
+  }
+
+  // Moves board blobs to `targets` (Map id -> { cx, cy }), pushes the
+  // others aside (the placed ones and `fixed` ids stay put), adds `links`,
+  // all as one step (`coalesce` joins earlier steps of the same action).
+  // Blobs glide from where they are drawn (`from`: Map id -> { x, y }
+  // overrides that, e.g. a preview that was just undone).
+  function arrange(targets, opts = {}) {
+    const landed = [];
+    for (const [id, p] of targets) {
+      const s = measure(id);
+      landed.push({ id, x: Math.round(p.cx), y: Math.round(p.cy - s.h / 2), size: s });
+    }
+    for (const id of opts.fixed || []) {
+      const it = store.item(id);
+      if (it && !targets.has(id)) landed.push({ id, x: it.x, y: it.y, size: measure(id) });
+    }
+    const ids = new Set(landed.map(l => l.id));
+    const list = boardItems().filter(it => !ids.has(it.id)).map(it => ellipseOf(it, sizeOf(it.id)));
+    for (const l of landed) list.push(ellipseOf({ id: l.id, x: l.x, y: l.y }, l.size));
+    const pushes = [];
+    for (const [pid, p] of clearFormation(list, ids)) pushes.push({ id: pid, x: Math.round(p.cx), y: Math.round(p.cy - sizeOf(pid).h / 2) });
+    const moves = [...landed.map(l => ({ id: l.id, x: l.x, y: l.y })), ...pushes];
+    const from = new Map();
+    for (const m of moves) {
+      const o = (opts.from && opts.from.get(m.id)) || store.item(m.id);
+      if (o) from.set(m.id, { x: o.x, y: o.y });
+    }
+    const changed = store.applyFormation(moves, opts.links || [], { coalesce: opts.coalesce });
+    render();
+    glide(moves, from);
+    kick();
+    return changed;
+  }
+
+  // Where every board blob is now (to glide from after an undo).
+  function positions() {
+    return new Map(boardItems().map(it => [it.id, { x: it.x, y: it.y }]));
+  }
+
+  // After an undo that moved blobs: glide them from where they were.
+  function glideFromMap(prev) {
+    for (const it of boardItems()) {
+      const o = prev.get(it.id);
+      const el = els.get(it.id);
+      if (o && el && (o.x !== it.x || o.y !== it.y)) el._phys.glideFrom(o.x - it.x, o.y - it.y);
+    }
+    kick();
+  }
+
+  function pickBlob() {
+    if (picking) finishPick(null);
+    boardEl.classList.add('picking');
+    return new Promise(resolve => { picking = { resolve }; });
+  }
+  function finishPick(id) {
+    if (!picking) return;
+    const p = picking;
+    picking = null;
+    boardEl.classList.remove('picking');
+    p.resolve(id);
+  }
+
   // Birth animation for an item the user just created: grows from a dot.
   function spawn(id) {
     const el = allEls.get(id) || els.get(id);
@@ -849,6 +944,13 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     el: boardEl,
     render,
     spawn,
+    nodeOf,
+    arrange,
+    positions,
+    glideFrom: glideFromMap,
+    pickBlob,
+    cancelPick: () => finishPick(null),
+    get picking() { return !!picking; },
     getView: () => ({ ...view }),
     setSelectMode(on) { selectMode = !!on; boardEl.classList.toggle('select-mode', selectMode); },
     get selectMode() { return selectMode; },

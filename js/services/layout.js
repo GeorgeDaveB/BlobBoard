@@ -61,6 +61,43 @@ export function resolveOverlaps(list, fixed, gap = 10, maxPushes = 400) {
   return out;
 }
 
+// R34: after a formation lands (`fixed` = its blobs, packed tightly), blobs
+// caught in it first slide straight out, away from the formation's centre,
+// until clear; then the usual chain push runs from the formation and the
+// blobs that slid out. (A plain centre-to-centre push can trap a blob
+// between two placed blobs in a column.) Returns Map id -> { cx, cy }.
+export function clearFormation(list, fixed, gap = 10) {
+  const byId = new Map(list.map(e => [e.id, { ...e }]));
+  const fixedIds = new Set(fixed);
+  const F = [...fixedIds].map(id => byId.get(id)).filter(Boolean);
+  const moved = new Set();
+  if (!F.length) return new Map();
+  const fx = F.reduce((s, e) => s + e.cx, 0) / F.length, fy = F.reduce((s, e) => s + e.cy, 0) / F.length;
+  const hits = B => F.some(A => {
+    let dx = B.cx - A.cx, dy = B.cy - A.cy;
+    const d = Math.hypot(dx, dy) || 1e-6;
+    return d < support(A, dx / d, dy / d) + support(B, dx / d, dy / d) + gap - 0.5;
+  });
+  for (let round = 0; round < 4; round++) {
+    const out = [];
+    for (const B of byId.values()) {
+      if (fixedIds.has(B.id) || !hits(B)) continue;
+      let dx = B.cx - fx, dy = B.cy - fy;
+      let d = Math.hypot(dx, dy);
+      if (d < 1e-6) { dx = 0; dy = 1; d = 1; }
+      for (let k = 0; k < 600 && hits(B); k++) { B.cx += (dx / d) * 8; B.cy += (dy / d) * 8; }
+      moved.add(B.id);
+      out.push(B.id);
+    }
+    const pushed = resolveOverlaps([...byId.values()], [...fixedIds, ...out], gap);
+    for (const [id, p] of pushed) { const b = byId.get(id); b.cx = p.cx; b.cy = p.cy; moved.add(id); }
+    if (![...byId.values()].some(B => !fixedIds.has(B.id) && hits(B))) break;
+  }
+  const res = new Map();
+  for (const id of moved) res.set(id, { cx: byId.get(id).cx, cy: byId.get(id).cy });
+  return res;
+}
+
 // Does ellipse e touch rectangle r ({ x, y, w, h }, same coordinates)? Used
 // by the selection box: a blob is selected if the box touches its outline.
 export function ellipseTouchesRect(e, r) {

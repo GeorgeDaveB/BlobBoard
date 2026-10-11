@@ -97,6 +97,26 @@ Numbered so the build phases and tests can refer to them.
 - **R24** Select several items at once by dragging a selection box over an area (like selecting icons on a desktop), then move them together by dragging any one of them.
 - **R25** A new item stays from the moment it's created, even untitled (several items may share the name "Untitled"). Only Delete or Undo removes it.
 
+**Formations and releasing** (owner, 2026-10-07 — phase 3d)
+- **R34** **Bouncing** (formations). Code name: *Formation* (`services/formations.js`, `ui/formationPanel.js`); on screen: **Bouncing**.
+  - **Button:** top bar, next to the Pan/Select button. Greyed out until **3 or more blobs** are selected; pressing it greyed out shows "Select multiple items first". Opens a list: **Ring**, **Rows**, **Pyramid**.
+  - **Who takes part:** the selected blobs. The selection box picks up **free blobs only** (blobs directly on the canvas); a blob inside another blob (a mini, in an open tray or container) is added with **Ctrl/Shift+click** (PC only for now). If the selection includes minis, ask **"Move already grouped items?"** — Yes: they leave their old parent and become free blobs in the formation (same undo step); No: they are left out. A blob that has minis always moves as one unit with its contents.
+  - **Royalty** (Ring, Pyramid): a banner "Tap the royalty · Cancel"; tap **any free blob**, selected or not. The royalty **does not move**; the others arrange around / below it. The royalty is only used while placing — **no lasting relationship** is stored. The pick step (`pickBlob(prompt)`) is reusable for later "select one, the others group around" features.
+  - **Ring:** the royalty in the centre. **Inner ring: 8 spokes**, filled in pairs of opposites: **top-left, bottom-right, bottom-left, top-right, left, right, top, bottom**. **Outer rings hold more** (as many as fit around them) and sit **in the gaps between the inner ring's blobs**, so a straight line from the royalty passes between them; each outer ring fills in the same pair-of-opposites order starting top-left. Ring distance = the biggest blob in that ring + a small gap. **Who goes where:** blobs already linked to the royalty fill the inner ring(s) first, then the nearest; within a ring each blob takes the free spot closest to its own direction (least travel). Option **"+ lines"**: adds a line from the royalty to each placed blob (arrowhead at the blob, canvas-default look), skipping pairs already linked.
+  - **Rows:** no royalty. A panel with a **number of rows** stepper, **alignment** (left / **centre** / right) and a **live preview** (blobs move as you change it), then **Apply** / Cancel. Rows hold N ÷ rows, **extras go to the first rows** (11 in 3 rows = 4, 4, 3). Placed **centred on where the selection is now**. Order: linked blobs are put **next to each other** (side by side, or above/below) as far as possible; the rest in reading order (left to right, top to bottom).
+  - **Pyramid:** royalty on top; a **tree**: blobs linked to the royalty (either direction) in the row below it, blobs linked to those below them, and so on. **Unlinked blobs fill the remaining places in pyramid order** (rows 1, 2, 3, 4…, left to right) with no preference. No line option yet.
+  - **All formations:** blobs **glide** to their places (jump with Motion → gliding off); other blobs in the way are **pushed aside**; lines are **not changed** (except Ring "+ lines"); **one undo step** + Undo toast.
+- **R35** **Release child(s) and Dissolve** (for blobs that have minis):
+  - **Release child(s):** in the item editor (✎, shown only when the blob has minis) and in the selection bar (shown when any selected blob has minis; applies to all of them). The blob's **direct** minis leave it and become free blobs, placed in a **Ring around the parent** (parent = royalty, R34 layout and order); a mini that has its own minis keeps them. Others pushed aside; one undo step + Undo toast.
+  - **Deleting a blob that has minis** asks: **Dissolve parent** — "Delete only this blob; its N minis stay on the canvas" (direct minis placed in a Ring **around the spot where it stood**) · **Dissolve family** — "Delete this blob and everything inside it (N)" · **Cancel**. Deleting several selected blobs where any has minis shows the same dialog; the choice applies to all. One undo step + Undo toast. (Replaces the old single "Delete … and its N inside items?" confirm.)
+- *As built (R34–R35, 2026-10-11, phase 3d):*
+  - The Bouncing button shows its word on wide screens (≥ 900 px), the icon only on phones. Narrow phones (≤ 420 px) get slightly tighter top-bar buttons so it fits.
+  - A selected mini stays selected only while its group is open (closing the group drops it from the selection).
+  - Blobs in the way of a formation first slide straight out from it, then the usual chain push runs (`layout.clearFormation`) — a plain push could trap a blob between two placed blobs. Drops still use the old push.
+  - Rows preview = real, undoable steps: each change undoes the previous preview (`store.undoStep(key)`) and applies the new one; Cancel undoes it. Leaving the app mid-preview keeps the preview (undo removes it).
+  - Inner ring radius opens up when more than 8 blobs take part, so the second ring fits two blobs per gap between inner blobs; blobs are treated as circles of their larger half-size.
+  - **Release / Dissolve of a blob that is itself inside a group:** its minis move up **into that same group** (right after it), not onto the canvas. On the canvas they ring round the parent / its old spot as specified.
+
 ---
 
 ## 3. Choices I made that you haven't confirmed
@@ -275,11 +295,12 @@ BlobBoard/
 │  ├─ core/      ✅ store.js · model.js · events.js · ids.js · migrate.js
 │  ├─ persist/   ✅ db.js · localRepo.js
 │  ├─ sync/      phase 8 — dropboxAuth.js · dropboxApi.js · syncEngine.js · merge.js
-│  ├─ services/  ✅ layout.js · geometry.js · color.js · strand.js (gooey-string geometry)
+│  ├─ services/  ✅ layout.js · geometry.js · color.js · strand.js (gooey-string geometry) ·
+│  │                formations.js (R34 layouts: Ring, Rows, Pyramid)
 │  │             phase 4/7 — imageProcessor.js · exportJson.js · exportPng.js
 │  └─ ui/        ✅ app.js · board.js · itemView.js · tray.js · physics.js · gestures.js ·
 │                   linksLayer.js · lineSheet.js · lineLookFields.js · richText.js · motionPanel.js ·
-│                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js
+│                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js · formationPanel.js (R34)
 │                phase 4+ — tagPicker.js · imageLibrary.js · canvasMenu.js
 ├─ icons/                  phase 9 — app icons (192 px, 512 px, maskable)
 ├─ tests/                  ✅ index.html + runner.js + smoke/model/services/store/physics/links/select/richtext
@@ -682,6 +703,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 3 Lines ✅ | connect dot, gooey lines, select, + / − arrows, × delete, removal on regrouping; growth pushes neighbours (R30) | R21–R23 pass |
 | 3b Multi-select ✅ | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
 | 3c Polish ✅ (added) | line look + text + editor (R31), styled descriptions (R32), Motion tab + idle-stopping loop (R33), settings side pane, hover affordances | owner checks on phone |
+| 3d Bouncing + release ✅ (added) | R34 formations (Ring, Rows, Pyramid; Bouncing button; royalty pick; Ctrl/Shift+click minis; "+ lines" for Ring) and R35 (Release child(s); Dissolve parent / family) | layout unit tests; owner checks on phone |
 | 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
 | 5 Tags | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |

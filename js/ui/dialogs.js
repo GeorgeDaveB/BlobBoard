@@ -30,6 +30,67 @@ export function toast(message, { actionLabel, onAction, ms = 5000 } = {}) {
   return close;
 }
 
+// Several answers: choices = [{ label, value, kind: 'primary' | 'danger' |
+// undefined, note }]; a note is a short line under the button's label.
+// Resolves to the chosen value, or null (Cancel, Esc, tap outside).
+export function choiceDialog({ title, message, choices }) {
+  return new Promise(resolve => {
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    const box = document.createElement('div');
+    box.className = 'modal modal-choices';
+    box.setAttribute('role', 'alertdialog');
+    box.setAttribute('aria-modal', 'true');
+    const h = document.createElement('h2');
+    h.textContent = title;
+    box.append(h);
+    if (message) {
+      const p = document.createElement('p');
+      p.textContent = message;
+      box.append(p);
+    }
+    const list = document.createElement('div');
+    list.className = 'modal-choice-list';
+    const finish = value => {
+      document.removeEventListener('keydown', onKey, true);
+      back.remove();
+      resolve(value);
+    };
+    let first = null;
+    for (const c of choices) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn modal-choice' + (c.kind === 'danger' ? ' btn-danger' : c.kind === 'primary' ? ' btn-primary' : '');
+      const l = document.createElement('span');
+      l.textContent = c.label;
+      b.append(l);
+      if (c.note) {
+        const n = document.createElement('small');
+        n.textContent = c.note;
+        b.append(n);
+      }
+      b.addEventListener('click', () => finish(c.value));
+      list.append(b);
+      if (!first) first = b;
+    }
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn modal-choice';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => finish(null));
+    list.append(cancel);
+    box.append(list);
+    back.append(box);
+    document.body.append(back);
+    if (first) first.focus();
+    const onKey = e => {
+      if (e.key === 'Escape') { e.stopPropagation(); finish(null); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    back.addEventListener('click', e => { if (e.target === back) finish(null); });
+  });
+}
+
 export function confirmDialog({ title, message, okLabel = 'OK', danger = false }) {
   return new Promise(resolve => {
     const back = document.createElement('div');

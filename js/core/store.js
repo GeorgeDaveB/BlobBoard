@@ -11,8 +11,9 @@ export function createStore({ repo, now = () => Date.now() }) {
   const events = createEmitter();
   // Screen state (not saved): which items are expanded (a path from the top
   // level down: one per level, C2) and what is selected: one item
-  // (selectedId), several top-level items (selectedIds, 2 or more — R24),
-  // or one line (selectedLinkId) — only one of the three at a time.
+  // (selectedId), several items you can see (selectedIds, 2 or more — R24;
+  // board blobs, plus minis of open groups added with Ctrl/Shift+click —
+  // R34), or one line (selectedLinkId) — only one of the three at a time.
   const ui = { canvasId: null, expanded: [], selectedId: null, selectedIds: [], selectedLinkId: null };
 
   function hist(canvasId) {
@@ -60,13 +61,20 @@ export function createStore({ repo, now = () => Date.now() }) {
     ui.expanded = path;
     if (ui.selectedId && !doc.items[ui.selectedId]) ui.selectedId = null;
     if (ui.selectedLinkId && !doc.links[ui.selectedLinkId]) ui.selectedLinkId = null;
-    // Multi-selection: only top-level items that still exist; one left
-    // becomes a normal selection.
+    // Multi-selection: only items that still exist and can be seen (a
+    // closed group drops its selected minis); one left becomes a normal
+    // selection.
     if (ui.selectedIds.length) {
-      const ok = ui.selectedIds.filter(id => doc.items[id] && doc.items[id].parentId === null);
+      const ok = ui.selectedIds.filter(id => visible(doc, id));
       ui.selectedIds = ok.length > 1 ? ok : [];
       if (ok.length === 1) ui.selectedId = ok[0];
     }
+  }
+
+  // A blob on the board, or a mini in an open group.
+  function visible(doc, id) {
+    const it = doc && doc.items[id];
+    return !!it && (it.parentId === null || ui.expanded.includes(it.parentId));
   }
 
   // Puts `id` inside `target` (null = top level) at (x, y); removes its
@@ -145,11 +153,11 @@ export function createStore({ repo, now = () => Date.now() }) {
       events.emit({ type: 'ui' });
     },
 
-    // Several items (R24): top-level ones only. One = normal selection,
-    // none = nothing selected.
+    // Several items (R24): ones you can see (board blobs, minis of open
+    // groups). One = normal selection, none = nothing selected.
     selectMany(ids) {
       const doc = canvases.get(ui.canvasId);
-      const ok = [...new Set(ids)].filter(id => doc && doc.items[id] && doc.items[id].parentId === null);
+      const ok = [...new Set(ids)].filter(id => visible(doc, id));
       if (ok.length < 2) { store.select(ok[0] || null); return; }
       if (JSON.stringify(ok) === JSON.stringify(ui.selectedIds)) return;
       ui.selectedIds = ok;
@@ -333,6 +341,111 @@ export function createStore({ repo, now = () => Date.now() }) {
         }
         if (gone.has(ui.selectedId)) ui.selectedId = null;
       });
+    },
+
+    // R35 "Release child(s)": the direct minis of each of `ids` leave it for
+    // the parent's own level (a mini that has minis keeps them). On the
+    // board they start at the parent's spot (the caller then rings them
+    // round it); inside a group they go right after the parent. Returns
+    // [{ parentId, ids }] for the ones that landed on the board.
+    releaseChildren(ids, opts = {}) {
+      const out = [];
+      commit(opts.coalesce, (doc, t) => {
+        let changed = false;
+        for (const pid of ids) {
+          const p = doc.items[pid];
+          if (!p) continue;
+          const kids = childrenOf(doc, pid);
+          if (!kids.length) continue;
+          const level = p.parentId;
+          let index = level === null ? null : childrenOf(doc, level).findIndex(s => s.id === pid) + 1;
+          const moved = [];
+          for (const k of kids) {
+            if (moveInside(doc, t, k.id, level, p.x, p.y, index)) {
+              moved.push(k.id);
+              if (index != null) index++;
+            }
+          }
+          if (moved.length) changed = true;
+          if (moved.length && level === null) out.push({ parentId: pid, ids: moved });
+        }
+        if (!changed) return false;
+      });
+      return out;
+    },
+
+    // R35 "Dissolve parent": deletes `ids` only (and their lines); their
+    // surviving direct minis move up to the nearest surviving level. On the
+    // board they start where their top-level deleted ancestor stood (`spotId`;
+    // the caller rings them round that spot). Returns [{ spotId, ids }].
+    dissolveItems(ids, opts = {}) {
+      const out = new Map();
+      commit(opts.coalesce, (doc, t) => {
+        const gone = new Set(ids.filter(id => doc.items[id]));
+        if (!gone.size) return false;
+        // Where things go is worked out before anything moves.
+        const plans = [];
+        for (const d of gone) {
+          let level = doc.items[d].parentId;
+          while (level !== null && gone.has(level)) level = doc.items[level].parentId;
+          const top = [d, ...ancestorsOf(doc, d)].find(a => doc.items[a].parentId === null);
+          for (const k of childrenOf(doc, d)) {
+            if (!gone.has(k.id)) plans.push({ id: k.id, d, level, spot: doc.items[top] });
+          }
+        }
+        for (const pl of plans) {
+          const d = doc.items[pl.d];
+          let index = null;
+          if (pl.level !== null && d.parentId === pl.level) index = childrenOf(doc, pl.level).findIndex(s => s.id === pl.d) + 1;
+          if (!moveInside(doc, t, pl.id, pl.level, pl.spot.x, pl.spot.y, index)) continue;
+          if (pl.level === null) {
+            if (!out.has(pl.spot.id)) out.set(pl.spot.id, []);
+            out.get(pl.spot.id).push(pl.id);
+          }
+        }
+        for (const g of gone) delete doc.items[g];
+        for (const [lid, ln] of Object.entries(doc.links)) {
+          if (gone.has(ln.from) || gone.has(ln.to)) delete doc.links[lid];
+        }
+        if (gone.has(ui.selectedId)) ui.selectedId = null;
+        ui.selectedIds = ui.selectedIds.filter(id => !gone.has(id));
+      });
+      return [...out].map(([spotId, list]) => ({ spotId, ids: list }));
+    },
+
+    // R34: a formation's final positions (board blobs: placed + pushed
+    // aside) and any new lines ([{ from, to }], skipped if not allowed) as
+    // one step.
+    applyFormation(moves, links = [], opts = {}) {
+      return commit(opts.coalesce, (doc, t) => {
+        let changed = false;
+        for (const m of moves) {
+          const item = doc.items[m.id];
+          if (!item) continue;
+          const x = Math.round(m.x), y = Math.round(m.y);
+          if (item.x === x && item.y === y) continue;
+          item.x = x;
+          item.y = y;
+          item.updatedAt = t;
+          changed = true;
+        }
+        for (const l of links) {
+          if (linkProblem(doc, l.from, l.to)) continue;
+          const ln = newLink(l.from, l.to, t);
+          doc.links[ln.id] = ln;
+          changed = true;
+        }
+        if (!changed) return false;
+      });
+    },
+
+    // Undoes the last step only if it is the one recorded under `key` (a
+    // live preview being replaced or cancelled). Returns true if it did.
+    undoStep(key, canvasId = ui.canvasId) {
+      const h = hist(canvasId);
+      const top = h.undo[h.undo.length - 1];
+      if (!key || !top || top.key !== key) return false;
+      return store.undo(canvasId);
     },
 
     // A line from `from` to `to` (same board, one per pair), arrowhead at

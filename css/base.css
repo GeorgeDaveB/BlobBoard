@@ -454,3 +454,80 @@ html, body {
 /* Compact (inside an open blob): smaller buttons, see-through box. */
 .rich-compact .rich-btn { min-width: 30px; height: 28px; font-size: 13px; padding: 0 6px; background: rgba(255, 255, 255, .7); }
 .rich-compact .rich-box { min-height: 48px; background: rgba(255, 255, 255, .55); color: #1f1d1a; font-size: 13.5px; }
+
+/* ---- Bouncing (R34): top-bar button, menu, banner ---- */
+.bouncing-btn .bouncing-text { display: none; }
+.bouncing-btn svg circle { fill: currentColor; stroke: none; }
+.bouncing-btn.is-off { opacity: .35; }
+.bouncing-btn.is-off:hover { background: transparent; }
+@media (min-width: 900px) {
+  .bouncing-btn { width: auto; padding: 0 10px 0 8px; gap: 6px; font: inherit; font-weight: 600; }
+  .bouncing-btn .bouncing-text { display: inline; }
+}
+.formation-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 220px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-2);
+}
+.formation-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.formation-item small { color: var(--muted); font-weight: 400; font-size: 13px; }
+.formation-item:hover, .formation-item:focus-visible { background: rgba(0, 0, 0, .05); outline: none; }
+.formation-bar {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top) + 12px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 8px 6px 16px;
+  background: var(--surface);
+  border-radius: 22px;
+  box-shadow: var(--shadow-2);
+  z-index: 26;
+}
+.formation-title { font-weight: 700; }
+.formation-hint { color: var(--muted); }
+.formation-stepper { display: flex; align-items: center; }
+.formation-count { min-width: 56px; text-align: center; font-weight: 600; }
+.formation-step { font-size: 20px; font-weight: 600; }
+.formation-align { flex-wrap: nowrap; }
+.board.picking, .board.picking .item { cursor: pointer; }
+.board.picking .items-layer > .item:hover > .item-jelly > .item-body { box-shadow: 0 0 0 4px #fff, 0 0 0 7px var(--ink); }
+
+/* Choice dialog (Move already grouped items? / Dissolve). */
+.modal-choice-list { display: flex; flex-direction: column; gap: 8px; }
+.modal-choice { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 10px 16px; text-align: left; }
+.modal-choice small { font-weight: 400; font-size: 13px; opacity: .8; }
+.modal-choices h2 { margin-bottom: 14px; }
+.modal-choices p { margin-bottom: 14px; }
+/* Narrow phones: the top bar fits one more button. */
+@media (max-width: 420px) {
+  .tools { gap: 0; }
+  .tools .icon-btn { width: 34px; }
+  .tool-sep { margin: 0 2px; }
+}

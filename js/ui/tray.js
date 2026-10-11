@@ -50,7 +50,7 @@ export function renderTray(trayEl, parent, depth, ctx) {
     }
     const isOpen = openId === kid.id;
     updateItemEl(el, kid, {
-      selected: ctx.ui.selectedId === kid.id,
+      selected: ctx.ui.selectedId === kid.id || ctx.ui.selectedIds.includes(kid.id),
       kids: childrenOf(ctx.doc, kid.id),
       expanded: isOpen,
       container: ctx.container
