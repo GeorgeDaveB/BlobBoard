@@ -59,7 +59,11 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   descShow.className = 'desc-show';
   descShow.dataset.noGesture = '';
   descShow.textContent = '▸ Description';
-  body.append(title, notes, desc, descShow);
+  // Tag chips (R10): up to 3, then "+N". Not on minis.
+  const tagRow = document.createElement('div');
+  tagRow.className = 'item-tags';
+  tagRow.hidden = true;
+  body.append(title, tagRow, notes, desc, descShow);
 
   let editKey = null;
   descText.addEventListener('click', e => {
@@ -124,7 +128,7 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   img.decoding = 'async';
   pic.append(img);
   body.prepend(pic);
-  el._parts = { body, title, notes, kids, shapes, badge, desc, descText, descInput, descShow, pic, img };
+  el._parts = { body, title, tagRow, notes, kids, shapes, badge, desc, descText, descInput, descShow, pic, img };
   el._editingDesc = () => !descInput.hidden;
   el._phys = createPhysics(jellyLayer, body, item.seed);
   return el;
@@ -168,7 +172,8 @@ function showDesc(el) {
 // ctx: { selected, kids (inside items, in tray order), expanded,
 //        container (expanded in container view), growth,
 //        picOf(thumbId) -> { url, aspect } | null (null when the canvas's
-//        thumbnails are off or the picture isn't on this device) }
+//        thumbnails are off or the picture isn't on this device),
+//        tagsOf(tagIds) -> live tags [{ name, color }], faded (filter, C6) }
 export function updateItemEl(el, item, ctx) {
   const p = el._parts;
   const picOf = ctx.picOf || (() => null);
@@ -204,9 +209,13 @@ export function updateItemEl(el, item, ctx) {
   const mini = el.classList.contains('mini');
   const card = !!pic && !mini && !container;
   const picBlob = !!pic && mini && !container;
-  if (el._picUrl !== (pic && pic.url) || el._card !== card || el._picBlob !== picBlob) {
+  // Opened into a container (editing in place): the picture stays as a
+  // faded background and the card's corners stay (owner, 2026-10-11).
+  const picOpen = !!pic && container;
+  if (el._picUrl !== (pic && pic.url) || el._card !== card || el._picBlob !== picBlob || el._picOpen !== picOpen) {
     el.classList.toggle('card', card);
     el.classList.toggle('pic-blob', picBlob);
+    el.classList.toggle('pic-open', picOpen);
     p.pic.hidden = !card;
     if (card) {
       if (p.img.src !== pic.url) p.img.src = pic.url;
@@ -215,13 +224,38 @@ export function updateItemEl(el, item, ctx) {
     } else if (p.title.parentElement !== p.body) {
       p.pic.after(p.title);
     }
-    if (picBlob) p.body.style.setProperty('--pic', 'url("' + pic.url + '")');
+    if (picBlob || picOpen) p.body.style.setProperty('--pic', 'url("' + pic.url + '")');
     else p.body.style.removeProperty('--pic');
     el._picUrl = pic && pic.url;
     el._card = card;
     el._picBlob = picBlob;
+    el._picOpen = picOpen;
   }
   el._phys.setCard(card);
+
+  // Tag chips (R10).
+  const tagList = mini || !ctx.tagsOf ? [] : ctx.tagsOf(item.tagIds || []);
+  const tagSig = JSON.stringify(tagList.map(t => [t.name, t.color]));
+  if (el._tagSig !== tagSig) {
+    p.tagRow.hidden = !tagList.length;
+    p.tagRow.replaceChildren(...tagList.slice(0, MAX_CHIPS).map(t => {
+      const c = document.createElement('span');
+      c.className = 'tag-chip';
+      c.textContent = t.name;
+      c.style.setProperty('--tag', t.color);
+      c.style.setProperty('--tag-ink', textColorFor(t.color));
+      return c;
+    }));
+    if (tagList.length > MAX_CHIPS) {
+      const more = document.createElement('span');
+      more.className = 'tag-chip more';
+      more.textContent = '+' + (tagList.length - MAX_CHIPS);
+      p.tagRow.append(more);
+    }
+    el.classList.toggle('has-tags', tagList.length > 0);
+    el._tagSig = tagSig;
+  }
+  el.classList.toggle('faded', !!ctx.faded);
 
   // Collapsed group: up to 6 mini shapes in the inside items' colours (or
   // their pictures) + badge.
@@ -258,10 +292,11 @@ export function updateItemEl(el, item, ctx) {
   el.classList.toggle('selected', !!ctx.selected);
   // Text needs a squarer outline to stay inside: a bit with notes, a lot
   // when fully expanded (whole description shown). Morphs with a spring.
-  el._phys.setRoundness(container ? 0.16 : card ? 0.2 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
+  el._phys.setRoundness(card || picOpen ? 0.2 : container ? 0.16 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
 }
 
 export const MAX_GROW = 5;
+export const MAX_CHIPS = 3;
 
 export function growFactor(insideCount, perItem = 1) {
   const k = isFinite(perItem) ? Math.max(0, perItem) : 1;

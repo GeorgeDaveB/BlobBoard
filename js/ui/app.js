@@ -6,6 +6,7 @@ import { createEditSheet, newSessionKey } from './editSheet.js';
 import { initDialogs, toast, choiceDialog } from './dialogs.js';
 import { createFormationUI, MIN_SELECTED } from './formationPanel.js';
 import { ringLayout } from '../services/formations.js';
+import { createFilterMenu } from './tagPicker.js';
 import { createSettingsSheet } from './settingsSheet.js';
 import { createLineSheet } from './lineSheet.js';
 import { setMotion } from './physics.js';
@@ -21,6 +22,7 @@ const ICONS = {
   zoomOut: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>',
   pan: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5v-6a1.5 1.5 0 0 1 3 0V11M14 10.5V6a1.5 1.5 0 0 1 3 0v5M17 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.6-2.2L4.6 15.4a1.6 1.6 0 0 1 2.4-2.1L8 14.5"/></svg>',
   select: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" stroke-dasharray="3 2.6"/></svg>',
+  filter: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6.2 7.4V19l-3.6-1.8v-4.8z"/></svg>',
   bouncing: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.6"/><circle cx="12" cy="4.2" r="1.9"/><circle cx="19.4" cy="15.6" r="1.9"/><circle cx="4.6" cy="15.6" r="1.9"/></svg>',
   gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
 };
@@ -52,7 +54,14 @@ export function mountApp({ root, store, repo, pictures = null }) {
   bounceText.className = 'bouncing-text';
   bounceText.textContent = 'Bouncing';
   btnBounce.append(bounceText);
-  tools.append(btnMode, btnBounce, sep(), btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), btnGear);
+  // R11: tag filter (badge = how many tags are picked).
+  const btnFilter = iconButton('filter', 'Filter by tags');
+  btnFilter.classList.add('filter-btn');
+  const filterBadge = document.createElement('span');
+  filterBadge.className = 'filter-badge';
+  filterBadge.hidden = true;
+  btnFilter.append(filterBadge);
+  tools.append(btnMode, btnBounce, btnFilter, sep(), btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), btnGear);
   top.append(name, tools);
 
   const main = document.createElement('main');
@@ -383,6 +392,11 @@ export function mountApp({ root, store, repo, pictures = null }) {
     selBar.hidden = n < 2;
     if (n >= 2) selCount.textContent = n + ' selected';
     selRelease.hidden = !store.ui.selectedIds.some(id => doc.items[id] && childrenOf(doc, id).length > 0);
+    const nf = store.ui.filter.tagIds.length;
+    btnFilter.classList.toggle('on', nf > 0);
+    filterBadge.hidden = !nf;
+    filterBadge.textContent = String(nf);
+    btnFilter.title = nf ? 'Filter: ' + nf + ' tag' + (nf === 1 ? '' : 's') + ' picked' : 'Filter by tags';
     const ready = store.selectedItems().length >= MIN_SELECTED;
     btnBounce.classList.toggle('is-off', !ready);
     btnBounce.setAttribute('aria-disabled', String(!ready));
@@ -397,7 +411,8 @@ export function mountApp({ root, store, repo, pictures = null }) {
     shownExpanded = exp;
     refreshChrome();
     syncTrayLayer();
-    if (change.type === 'data' && editor.isOpen && !editor.refresh()) closeLayer(editorLayer);
+    if ((change.type === 'data' || change.type === 'tags') && editor.isOpen && !editor.refresh()) closeLayer(editorLayer);
+    if (change.type === 'ui' || change.type === 'tags') saveFilter();
     if (lineSheet.isOpen && !lineSheet.refresh()) closeLayer(lineLayer);
     // Selecting something else (or nothing) while editing a line closes it.
     if (change.type === 'ui' && lineSheet.isOpen && store.ui.selectedLinkId !== lineSheet.linkId) closeLayer(lineLayer);
@@ -427,6 +442,7 @@ export function mountApp({ root, store, repo, pictures = null }) {
     const typing = e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]');
     if (e.key === 'Escape') {
       formations.closeMenu();
+      filterMenu.close();
       if (layers.length) closeTopLayer();
       else { store.select(null); store.selectLink(null); }
       return;
@@ -446,6 +462,18 @@ export function mountApp({ root, store, repo, pictures = null }) {
 
   // A picture added or deleted: redraw cards and the open editor.
   if (pictures) pictures.on(() => { board.render(); if (editor.isOpen) editor.refresh(); });
+
+  // ---- tag filter (R11): remembered per canvas on this device ------------------
+  const filterMenu = createFilterMenu({ root, store });
+  btnFilter.addEventListener('click', () => filterMenu.open(btnFilter));
+  let savedFilter = '';
+  function saveFilter() {
+    const f = JSON.stringify(store.ui.filter);
+    if (f === savedFilter) return;
+    savedFilter = f;
+    repo.setSetting('filter:' + store.ui.canvasId, store.ui.filter);
+  }
+  repo.getSetting('filter:' + store.ui.canvasId).then(f => { if (f && Array.isArray(f.tagIds)) store.setFilter(f); }).catch(() => {});
 
   // ---- Bouncing (R34) ----------------------------------------------------------
   const formations = createFormationUI({ root, store, board, openLayer, closeLayer });

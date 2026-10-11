@@ -24,7 +24,9 @@ const MID_SPRING = [0.10, 0.80]; // [stiffness, damping] of the string's middle
 
 // geom(id) -> { cx, cy, a, b, rd } (the blob as drawn now) or null if it isn't
 // on this board. color(id) -> its colour.
-export function createLinksLayer({ world, before, store, geom, color, onToggleArrow, onDelete, onEdit }) {
+// faded(id): the blob is faded by the tag filter (C6) — a line between two
+// faded blobs fades too.
+export function createLinksLayer({ world, before, store, geom, color, faded = () => false, onToggleArrow, onDelete, onEdit }) {
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('class', 'links-layer');
   svg.setAttribute('width', '1');
@@ -129,6 +131,9 @@ export function createLinksLayer({ world, before, store, geom, color, onToggleAr
         v.labelKey = '';
       }
       const selected = store.ui.selectedLinkId === ln.id;
+      const dim = faded(ln.from) && faded(ln.to);
+      v.g.classList.toggle('faded', dim);
+      v.label.classList.toggle('faded', dim);
       v.g.classList.toggle('selected', selected);
       v.label.classList.toggle('selected', selected);
       v.d = ''; // arrows or style may have changed: redraw

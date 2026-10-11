@@ -3,7 +3,7 @@ import { uuid } from './ids.js';
 import { PALETTE, isHex } from '../services/color.js';
 
 export const SCHEMA = 1;
-export const LIMITS = { name: 100, title: 200, notes: 5000, notesHtml: 20000, label: 80 };
+export const LIMITS = { name: 100, title: 200, notes: 5000, notesHtml: 20000, label: 80, tag: 40, tagsPerItem: 30 };
 
 export function newCanvas(name, now = Date.now()) {
   return {
@@ -58,6 +58,7 @@ export function applyItemPatch(item, patch) {
     if (k === 'title') v = String(v).slice(0, LIMITS.title);
     if (k === 'notes') v = String(v).slice(0, LIMITS.notes);
     if (k === 'notesHtml') v = String(v).slice(0, LIMITS.notesHtml);
+    if (k === 'tagIds') v = Array.isArray(v) ? [...new Set(v.filter(t => typeof t === 'string' && t))].slice(0, LIMITS.tagsPerItem) : [];
     if (k === 'color' && !isHex(v)) continue;
     if (k === 'done') v = !!v;
     if (JSON.stringify(item[k]) !== JSON.stringify(v)) {
@@ -297,4 +298,86 @@ export function sanitizeCanvas(doc) {
   }
 
   return { doc, fixes };
+}
+
+// ---- tags (R10, R11; phase 5) -------------------------------------------------
+// Shared by every canvas: { id, name, color, createdAt, updatedAt, deleted? }.
+// Items point at them with tagIds.
+
+// For matching names: no case, no accents ("υγεια" finds "Υγεία").
+export function foldText(s) {
+  return String(s || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/ς/g, 'σ').trim();
+}
+
+export function cleanTagName(name) {
+  return String(name || '').replace(/\s+/g, ' ').trim().slice(0, LIMITS.tag);
+}
+
+// A new tag; colour = the next palette colour after the existing tags.
+export function newTag(name, existing = [], now = Date.now()) {
+  const n = existing.filter(t => !t.deleted).length;
+  return { id: 't-' + uuid(), name: cleanTagName(name), color: PALETTE[n % PALETTE.length].hex, createdAt: now, updatedAt: now };
+}
+
+// The live tag with this name (ignoring case and accents), or null.
+export function findTagByName(tags, name) {
+  const f = foldText(cleanTagName(name));
+  if (!f) return null;
+  return tags.find(t => !t.deleted && foldText(t.name) === f) || null;
+}
+
+// Tags whose name contains `query` (ignoring case/accents); names starting
+// with it first.
+export function searchTags(tags, query) {
+  const q = foldText(query);
+  const live = tags.filter(t => !t.deleted);
+  if (!q) return live.slice().sort((a, b) => a.name.localeCompare(b.name));
+  return live
+    .map(t => ({ t, i: foldText(t.name).indexOf(q) }))
+    .filter(x => x.i >= 0)
+    .sort((a, b) => (a.i === 0 ? 0 : 1) - (b.i === 0 ? 0 : 1) || a.t.name.localeCompare(b.t.name))
+    .map(x => x.t);
+}
+
+export const isTagColor = v => isHex(v);
+
+export function sanitizeTag(t) {
+  if (!t || typeof t !== 'object' || typeof t.id !== 'string' || !t.id) return null;
+  const now = Date.now();
+  return {
+    id: t.id,
+    name: cleanTagName(t.name) || 'Tag',
+    color: isHex(t.color) ? t.color : PALETTE[0].hex,
+    createdAt: num(t.createdAt, now),
+    updatedAt: num(t.updatedAt, now),
+    ...(t.deleted ? { deleted: true } : {})
+  };
+}
+
+// R11 / C6: which items stay bright under the filter { tagIds, all }.
+// An item matches if it has any (or, with `all`, every) picked tag; every
+// group above a matching item stays bright too. Returns a Set of ids, or
+// null when no filter is active.
+export function filterMatches(canvas, filter) {
+  const want = filter && Array.isArray(filter.tagIds) ? filter.tagIds : [];
+  if (!want.length) return null;
+  const bright = new Set();
+  for (const it of Object.values(canvas.items)) {
+    const has = new Set(it.tagIds || []);
+    const ok = filter.all ? want.every(t => has.has(t)) : want.some(t => has.has(t));
+    if (!ok) continue;
+    bright.add(it.id);
+    for (const a of ancestorsOf(canvas, it.id)) bright.add(a);
+  }
+  return bright;
+}
+
+// Items that match the filter themselves (not just because something inside does).
+export function filterHits(canvas, filter) {
+  const want = filter && Array.isArray(filter.tagIds) ? filter.tagIds : [];
+  if (!want.length) return [];
+  return Object.values(canvas.items).filter(it => {
+    const has = new Set(it.tagIds || []);
+    return filter.all ? want.every(t => has.has(t)) : want.some(t => has.has(t));
+  }).map(it => it.id);
 }

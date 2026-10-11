@@ -3,7 +3,7 @@
 // drawing lines, auto-pan.
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, itemRect } from '../services/geometry.js';
 import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps, ellipseTouchesRect, clearFormation } from '../services/layout.js';
-import { childrenOf, descendantsOf, linkProblem } from '../core/model.js';
+import { childrenOf, descendantsOf, linkProblem, filterMatches } from '../core/model.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
 import { renderTray, disposeTray, syncInline, removeInline } from './tray.js';
 import { attachGestures } from './gestures.js';
@@ -118,6 +118,12 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     return sizeOf(id);
   };
 
+  // Phase 5: an item's live tags (R10), and the filter's bright set (C6;
+  // null = no filter).
+  const tagsOf = ids => ids.map(id => store.tag(id)).filter(Boolean);
+  let bright = null;
+  const isFaded = id => !!bright && !bright.has(id);
+
   // A blob as drawn right now (position incl. drag, size, physics offset and
   // squash), for the lines. null if it isn't on this board.
   function geom(id) {
@@ -139,6 +145,7 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     store,
     geom,
     color: id => (store.item(id) ? store.item(id).color : '#999'),
+    faded: isFaded,
     onToggleArrow: (id, end) => store.toggleArrow(id, end),
     onDelete: id => (onDeleteLink ? onDeleteLink(id) : store.deleteLink(id)),
     onEdit: id => { if (onEditLink) onEditLink(id); }
@@ -173,7 +180,9 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     const seen = new Set();
     allEls.clear();
     const container = doc.settings.insideView === 'container';
-    const trayCtx = { doc, ui, container, picOf, onEdit, onNotes, onAdd: onAddInside, register: (id, el) => allEls.set(id, el) };
+    bright = filterMatches(doc, ui.filter);
+    boardEl.classList.toggle('filtering', !!bright);
+    const trayCtx = { doc, ui, container, picOf, tagsOf, isFaded, onEdit, onNotes, onAdd: onAddInside, register: (id, el) => allEls.set(id, el) };
 
     for (const item of boardItems()) {
       seen.add(item.id);
@@ -189,7 +198,7 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
       const kids = childrenOf(doc, item.id);
       el._kidCount = kids.length;
       const selected = ui.selectedId === item.id || ui.selectedIds.includes(item.id);
-      updateItemEl(el, item, { selected, kids, expanded, container, growth: doc.settings.growth, picOf });
+      updateItemEl(el, item, { selected, kids, expanded, container, growth: doc.settings.growth, picOf, tagsOf, faded: isFaded(item.id) });
       allEls.set(item.id, el);
       if (!drag || drag.id !== item.id || drag.ghost) {
         positionEl(el, item.x, item.y);
@@ -542,7 +551,7 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
       const miniEl = allEls.get(id);
       if (!miniEl) return;
       const ghost = createItemEl(item, { onEdit });
-      updateItemEl(ghost, item, { kids: childrenOf(doc, id), picOf });
+      updateItemEl(ghost, item, { kids: childrenOf(doc, id), picOf, tagsOf });
       ghost.classList.add('ghost');
       ghost.style.zIndex = 1000000;
       itemsLayer.append(ghost);

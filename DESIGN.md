@@ -58,12 +58,13 @@ Numbered so the build phases and tests can refer to them.
 - **R7** Thumbnails picked from pictures on the device (multi-file picker) into a shared picture library.
 - **R8** Look: animated organic blob. Thumbnails toggle ON → items that have a thumbnail become rounded Pinterest cards, the rest stay blobs. OFF → everything is a blob. The change animates.
   - *As built (phase 4, 2026-10-11, owner took all defaults):* **Picture** row in the item editor (preview, **Choose…/Change…** opens the library: **Add pictures** — several at once; Android's picker offers the camera — tap one to use it, **Remove picture**; adding exactly one picture in the picker uses it straight away). ⚙ → **Pictures** tab: the library on this device (count + size), Add pictures, × deletes one ("Used by N items — they go back to their colour", Undo). ⚙ → Canvas: **Show pictures** switch (= `settings.thumbnails`, per canvas, C4).
-  - **Card:** 180 px wide (× growth, R30), rounded rectangle (roundness 0.2, so lines attach to its rounded-rectangle edge), picture on top keeping its shape (height/width 0.6–1.6, cropped beyond), title on a dark see-through pill over the picture's bottom edge, notes underneath (3 lines, fading); badge + mini shapes under the card. **No idle wobble** (drag squash, bounces and floating stay). An open container (container view) stays a container without the picture.
+  - **Card:** 180 px wide (× growth, R30), rounded rectangle (roundness 0.2, so lines attach to its rounded-rectangle edge), picture on top keeping its shape (height/width 0.6–1.6, cropped beyond), title on a dark see-through pill over the picture's bottom edge, notes underneath (3 lines, fading); badge + mini shapes under the card. **No idle wobble** (drag squash, bounces and floating stay). Opened into a container (container view, also when editing): the picture stays as a **faded background** (about a third shows through the item colour) and the card's corners stay (owner, 2026-10-11).
   - **Minis with a picture** (switch on): the picture as a round crop instead of the colour, title on a small pill; the collapsed group's mini shapes show the picture too.
   - **Pictures:** longest side 640 px, WebP quality 0.82, turned upright from the photo's rotation info; id = SHA-256 of the original file (`p-…`), so the same picture is stored once. Unreadable formats (e.g. some HEIC) / non-pictures / files over 40 MB → a clear message. Deleting hides the picture until the next start (so Undo works); then it is removed if nothing uses it.
 - **R9** Notes: the item grows to fit its notes; collapsed it shows the first ~3 lines, fading out (title: 2 lines) — text never shows outside the outline. Fully expanded (R16) it shows the whole description. Styling: R32.
 - **R10** Tags: reusable, chosen from a dropdown. Typing a new one creates it, and it's available from then on. Shown as chips on the item. A list to rename/delete tags. Shared across all canvases.
 - **R11** Tag filter on the board.
+  - *As built (phase 5, 2026-10-11, owner took all defaults):* **Chips** under the title of blobs and cards (cards: under the picture), up to 3 then "+N", none on minis; each tag has its own palette colour (next one in turn; changeable). **Editor → Tags**: chips with ×, type to search (no case/accents, Greek included), Enter adds the highlighted tag or creates "xyz"; Backspace on an empty box removes the last chip. **⚙ → Tags** tab: add, rename (duplicate names refused), recolour (8 swatches), delete ("Used by N items — taken off them", Undo). **Filter**: funnel button in the top bar (badge = tags picked) → menu: tag chips to pick, **Match all picked tags** switch (default: any), **Select all matching** (blobs you can see; minis in closed groups left out, with a note), **Clear**. Non-matching items fade to 20%; a group stays bright if anything inside matches (C6); a line fades only when both its blobs are faded. The filter is remembered per canvas on this device (`filter:<canvasId>`). Deleted tags are hidden until the next start (undo-safe), then removed if unused.
 
 **Layout and grouping**
 - **R12** Free canvas (pan and zoom) with Pinterest styling (rounded cards, soft shadows).
@@ -308,7 +309,8 @@ BlobBoard/
 │                   linksLayer.js · lineSheet.js · lineLookFields.js · richText.js · motionPanel.js ·
 │                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js · formationPanel.js (R34) ·
 │                   pictures.js (picture library at run time) · imageLibrary.js (picker + grid)
-│                phase 5+ — tagPicker.js · canvasMenu.js
+│                   tagPicker.js (editor tags field, ⚙ Tags manager, filter menu)
+│                phase 6+ — canvasMenu.js
 ├─ icons/                  phase 9 — app icons (192 px, 512 px, maskable)
 ├─ tests/                  ✅ index.html + runner.js + smoke/model/services/store/physics/links/select/richtext
 │                             .test.js (in-browser unit tests, 98)
@@ -712,7 +714,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 3c Polish ✅ (added) | line look + text + editor (R31), styled descriptions (R32), Motion tab + idle-stopping loop (R33), settings side pane, hover affordances | owner checks on phone |
 | 3d Bouncing + release ✅ (added) | R34 formations (Ring, Rows, Pyramid; Bouncing button; royalty pick; Ctrl/Shift+click minis; "+ lines" for Ring) and R35 (Release child(s); Dissolve parent / family) | layout unit tests; owner checks on phone |
 | 4 Pictures and cards ✅ | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
-| 5 Tags | picker with create, chips, manager, filter | R10–R11 pass |
+| 5 Tags ✅ | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
 | 7 Export / import | file export/import, PNG picture, Android share | round-trip test passes |
 | 8 Dropbox sync | sign-in, sync engine, merge, status pill, live updates, one-window lock | two-device scenarios pass |

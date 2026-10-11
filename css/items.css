@@ -457,3 +457,22 @@
 .kid-shape.has-pic { background: var(--c) var(--pic) center / cover no-repeat; }
 /* (beats the expanded-with-notes size rule) */
 .item.card.expanded.has-notes > .item-jelly > .item-body { width: calc(220px * var(--grow, 1)); max-width: none; padding: 0 0 12px; }
+
+/* ---- tag chips on items (R10) and the filter fade (R11, C6) ---- */
+.item-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; max-width: 92%; }
+.item-tags .tag-chip { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .75); font-size: 11px; line-height: 16px; padding: 1px 8px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.item.card > .item-jelly > .item-body > .item-tags { padding: 0 10px; }
+.item.card:not(.has-notes).has-tags > .item-jelly > .item-body { padding-bottom: 10px; }
+.item.mini > .item-jelly > .item-body > .item-tags { display: none; }
+.item.faded { opacity: .2; transition: opacity .2s ease; }
+.item.faded.selected { opacity: .45; }
+
+/* A card opened into a container (editing in place): its picture stays as a
+   faded background (about a third shows through the item colour), so text
+   and the inside grid stay readable; corners stay the card's. */
+.item.pic-open > .item-jelly > .item-body {
+  background:
+    linear-gradient(color-mix(in srgb, var(--c) 68%, transparent), color-mix(in srgb, var(--c) 68%, transparent)),
+    var(--pic) center / cover no-repeat,
+    var(--c);
+}

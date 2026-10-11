@@ -35,6 +35,11 @@ export async function openRepo({ dbName = DB_NAME } = {}) {
       schedule();
     },
 
+    // Tags shared by every canvas (phase 5). Written straight away.
+    loadTags() { return db.getAll('tags'); },
+    saveTag(tag) { return db.put('tags', { ...tag }).catch(err => console.error('Tag save failed', err)); },
+    deleteTag(id) { return db.del('tags', id); },
+
     // Picture library (phase 4): { id, blob, w, h, bytes, createdAt, deleted? }.
     // Written straight away (not batched): pictures are added rarely.
     loadImages() { return db.getAll('images'); },

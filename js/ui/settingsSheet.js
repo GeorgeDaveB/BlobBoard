@@ -11,6 +11,7 @@ import { createLineLookFields } from './lineLookFields.js';
 import { confirmDialog, toast } from './dialogs.js';
 import { createMotionPanel } from './motionPanel.js';
 import { createLibraryGrid, addPicturesButton } from './imageLibrary.js';
+import { createTagManager } from './tagPicker.js';
 
 let sliderSeq = 0;
 const OPTIONS = [
@@ -79,7 +80,13 @@ export function createSettingsSheet({ host, store, pictures, onRequestClose, mot
     toast('Picture deleted', { actionLabel: 'Undo', onAction: () => { store.undoStep(key); pictures.restore(id); } });
   }
 
-  const tabBtns = [['canvas', 'Canvas', canvasPane], ['pictures', 'Pictures', picsPane], ['motion', 'Motion', motionPane]].map(([id, text, pane]) => {
+  // Tags (R10): shared by all canvases.
+  const tagsPane = document.createElement('div');
+  tagsPane.className = 'settings-pane';
+  const tagManager = createTagManager({ store });
+  tagsPane.append(tagManager.el);
+
+  const tabBtns = [['canvas', 'Canvas', canvasPane], ['tags', 'Tags', tagsPane], ['pictures', 'Pictures', picsPane], ['motion', 'Motion', motionPane]].map(([id, text, pane]) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'seg-btn';
@@ -98,6 +105,7 @@ export function createSettingsSheet({ host, store, pictures, onRequestClose, mot
     }
     if (id === 'motion') motionPanel.sync();
     if (id === 'pictures' && pictures) { picsGrid.refresh(); showPicsInfo(); }
+    if (id === 'tags') tagManager.refresh();
   }
 
   // R8 / C4: thumbnails switch, per canvas.
@@ -215,7 +223,7 @@ export function createSettingsSheet({ host, store, pictures, onRequestClose, mot
   note.textContent = 'Saved with this canvas. · Version ' + APP_VERSION;
 
   canvasPane.append(thumbRow, group, grow, linesTitle, linesHint, lineLook.el, applyAll);
-  body.append(tabs, canvasPane, picsPane, motionPane, note);
+  body.append(tabs, canvasPane, tagsPane, picsPane, motionPane, note);
   showTab('canvas');
   sheet.append(head, body);
   host.append(sheet);

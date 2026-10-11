@@ -1,6 +1,6 @@
 // The single source of truth in memory. Only these actions change data, so
 // every change is saved, (later) synced and undoable the same way.
-import { newItem, newLink, linkProblem, applyItemPatch, applyLinkPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
+import { newTag, findTagByName, cleanTagName, isTagColor, newItem, newLink, linkProblem, applyItemPatch, applyLinkPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
 import { createEmitter } from './events.js';
 
 export const UNDO_LIMIT = 50;
@@ -14,7 +14,12 @@ export function createStore({ repo, now = () => Date.now() }) {
   // (selectedId), several items you can see (selectedIds, 2 or more — R24;
   // board blobs, plus minis of open groups added with Ctrl/Shift+click —
   // R34), or one line (selectedLinkId) — only one of the three at a time.
-  const ui = { canvasId: null, expanded: [], selectedId: null, selectedIds: [], selectedLinkId: null };
+  // filter (R11, device-only): { tagIds, all } — items without a picked tag fade.
+  const ui = { canvasId: null, expanded: [], selectedId: null, selectedIds: [], selectedLinkId: null, filter: { tagIds: [], all: false } };
+  // Tags shared by every canvas (R10): id -> tag. Deleted ones stay (hidden)
+  // until the next start so Undo can bring them back.
+  const tags = new Map();
+  const saveTag = t => { if (repo.saveTag) repo.saveTag(t); };
 
   function hist(canvasId) {
     let h = history.get(canvasId);
@@ -61,6 +66,9 @@ export function createStore({ repo, now = () => Date.now() }) {
     ui.expanded = path;
     if (ui.selectedId && !doc.items[ui.selectedId]) ui.selectedId = null;
     if (ui.selectedLinkId && !doc.links[ui.selectedLinkId]) ui.selectedLinkId = null;
+    if (ui.filter.tagIds.some(id => !tags.has(id) || tags.get(id).deleted)) {
+      ui.filter = { ...ui.filter, tagIds: ui.filter.tagIds.filter(id => tags.has(id) && !tags.get(id).deleted) };
+    }
     // Multi-selection: only items that still exist and can be seen (a
     // closed group drops its selected minis); one left becomes a normal
     // selection.
@@ -113,7 +121,10 @@ export function createStore({ repo, now = () => Date.now() }) {
     ui,
     on: events.on,
 
-    load(docs, currentId) {
+    load(docs, currentId, tagList = []) {
+      tags.clear();
+      for (const t of tagList) if (t && t.id) tags.set(t.id, t);
+      ui.filter = { tagIds: [], all: false };
       canvases.clear();
       history.clear();
       for (const d of docs) canvases.set(d.id, d);
@@ -411,6 +422,97 @@ export function createStore({ repo, now = () => Date.now() }) {
         ui.selectedIds = ui.selectedIds.filter(id => !gone.has(id));
       });
       return [...out].map(([spotId, list]) => ({ spotId, ids: list }));
+    },
+
+    // ---- tags (R10, R11; phase 5) ----------------------------------------
+    // Live tags, A–Z.
+    tags() { return [...tags.values()].filter(t => !t.deleted).sort((a, b) => a.name.localeCompare(b.name)); },
+    tag(id) { const t = tags.get(id); return t && !t.deleted ? t : null; },
+
+    // The tag with this name (ignoring case/accents), created if new.
+    // Returns its id, or null for an empty name.
+    ensureTag(name) {
+      const clean = cleanTagName(name);
+      if (!clean) return null;
+      const old = findTagByName([...tags.values()], clean);
+      if (old) return old.id;
+      const t = newTag(clean, [...tags.values()], now());
+      tags.set(t.id, t);
+      saveTag(t);
+      events.emit({ type: 'tags' });
+      return t.id;
+    },
+
+    // Rename / recolour. Returns '' or why not: 'empty' | 'exists'.
+    updateTag(id, patch) {
+      const t = tags.get(id);
+      if (!t || t.deleted) return 'missing';
+      let changed = false;
+      if ('name' in patch) {
+        const name = cleanTagName(patch.name);
+        if (!name) return 'empty';
+        const other = findTagByName([...tags.values()], name);
+        if (other && other.id !== id) return 'exists';
+        if (name !== t.name) { t.name = name; changed = true; }
+      }
+      if ('color' in patch && isTagColor(patch.color) && patch.color !== t.color) { t.color = patch.color; changed = true; }
+      if (!changed) return '';
+      t.updatedAt = now();
+      saveTag(t);
+      events.emit({ type: 'tags' });
+      return '';
+    },
+
+    // How many items (every canvas) carry the tag.
+    tagUses(id) {
+      let n = 0;
+      for (const doc of canvases.values()) for (const it of Object.values(doc.items)) if ((it.tagIds || []).includes(id)) n++;
+      return n;
+    },
+
+    // Deletes a tag: taken off every item (one undo step per canvas under
+    // opts.coalesce) and hidden; restoreTag (Undo) brings it back.
+    deleteTag(id, opts = {}) {
+      const t = tags.get(id);
+      if (!t || t.deleted) return 0;
+      let n = 0;
+      for (const cid of canvases.keys()) {
+        commit(opts.coalesce, (doc, time) => {
+          let changed = false;
+          for (const it of Object.values(doc.items)) {
+            if (!(it.tagIds || []).includes(id)) continue;
+            it.tagIds = it.tagIds.filter(x => x !== id);
+            it.updatedAt = time;
+            changed = true;
+            n++;
+          }
+          if (!changed) return false;
+        }, cid);
+      }
+      t.deleted = true;
+      t.updatedAt = now();
+      saveTag(t);
+      fixUi();
+      events.emit({ type: 'tags' });
+      return n;
+    },
+
+    restoreTag(id) {
+      const t = tags.get(id);
+      if (!t || !t.deleted) return false;
+      delete t.deleted;
+      t.updatedAt = now();
+      saveTag(t);
+      events.emit({ type: 'tags' });
+      return true;
+    },
+
+    // The tag filter (screen state, this device).
+    setFilter(f) {
+      const next = { tagIds: [...new Set((f.tagIds || []).filter(id => store.tag(id)))], all: !!f.all };
+      if (JSON.stringify(next) === JSON.stringify(ui.filter)) return;
+      ui.filter = next;
+      events.emit({ type: 'ui' });
     },
 
     // Phase 4: how many items (on every canvas) use picture `imageId`.

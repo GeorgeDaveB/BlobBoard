@@ -1,7 +1,7 @@
 // Start-up sequence (design §8.0). Phase 1: device storage only.
 import { openRepo } from './persist/localRepo.js';
 import { createStore } from './core/store.js';
-import { newCanvas, sanitizeCanvas } from './core/model.js';
+import { newCanvas, sanitizeCanvas, sanitizeTag } from './core/model.js';
 import { mountApp } from './ui/app.js';
 import { createPictureLibrary } from './ui/pictures.js';
 
@@ -17,8 +17,21 @@ async function boot() {
   const current = canvases.find(c => c.id === lastId) || canvases[0];
   repo.setSetting('lastCanvasId', current.id);
 
+  // Tags (phase 5): repaired; deleted ones that nothing uses any more are
+  // removed for good (a delete undone before closing is kept).
+  const used = new Set();
+  for (const c of canvases) for (const it of Object.values(c.items)) for (const t of it.tagIds) used.add(t);
+  const tags = [];
+  for (const raw of await repo.loadTags().catch(() => [])) {
+    const t = sanitizeTag(raw);
+    if (!t) continue;
+    if (t.deleted && !used.has(t.id)) { repo.deleteTag(t.id); continue; }
+    if (t.deleted) { delete t.deleted; repo.saveTag(t); }
+    tags.push(t);
+  }
+
   const store = createStore({ repo });
-  store.load(canvases, current.id);
+  store.load(canvases, current.id, tags);
   // Picture library (phase 4); a broken one never stops the app.
   const pictures = await createPictureLibrary(repo, canvases).catch(err => { console.error('Pictures unavailable', err); return null; });
 

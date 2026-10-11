@@ -4,6 +4,7 @@ import { createColorPicker } from './colorPicker.js';
 import { LIMITS, childrenOf } from '../core/model.js';
 import { createRichEditor, notesHtmlOf } from './richText.js';
 import { openPicturePicker } from './imageLibrary.js';
+import { createTagField } from './tagPicker.js';
 
 let sessionSeq = 0;
 export const newSessionKey = () => 'edit:' + (++sessionSeq);
@@ -39,6 +40,9 @@ export function createEditSheet({ host, store, pictures, onRequestClose, onDelet
   });
   const notes = rich.box;
   const picker = createColorPicker({ onChange: hex => update({ color: hex }) });
+
+  // Tags (R10): chips + type to find or create.
+  const tagField = createTagField({ store, onChange: tagIds => update({ tagIds }) });
 
   // Picture (phase 4): preview + Choose… (opens the library) + Remove.
   const picRow = document.createElement('div');
@@ -95,7 +99,7 @@ export function createEditSheet({ host, store, pictures, onRequestClose, onDelet
   del.className = 'btn btn-danger btn-wide';
   del.textContent = 'Delete item';
 
-  body.append(field('Title', title), field('Notes', rich.el), field('Colour', picker.el), field('Picture', picField), doneRow, release, del);
+  body.append(field('Title', title), field('Tags', tagField.el), field('Notes', rich.el), field('Colour', picker.el), field('Picture', picField), doneRow, release, del);
   sheet.append(head, body);
   host.append(sheet);
 
@@ -127,6 +131,7 @@ export function createEditSheet({ host, store, pictures, onRequestClose, onDelet
     if (document.activeElement !== title) title.value = it.title;
     if (!rich.isFocused) rich.setHtml(notesHtmlOf(it));
     doneBox.checked = it.done;
+    tagField.set(it.tagIds || []);
     picker.setValue(it.color);
     release.hidden = !onRelease || childrenOf(store.canvas(), itemId).length === 0;
     const pic = it.thumbId && pictures ? pictures.get(it.thumbId) : null;

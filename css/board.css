@@ -147,3 +147,6 @@
 @media (pointer: coarse) {
   .link-ctl { width: 40px; height: 40px; margin: -20px 0 0 -20px; }
 }
+
+/* Tag filter (C6): a line between two faded blobs fades too. */
+.link.faded, .link-label.faded { opacity: .2; }
