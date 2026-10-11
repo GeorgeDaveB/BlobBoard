@@ -20,8 +20,13 @@ export function createFormationUI({ root, store, board, openLayer, closeLayer })
   const HINTS = {
     ring: 'Around a blob you pick',
     rows: 'In rows you choose',
-    pyramid: 'Below a blob you pick, by lines'
+    pyramid: 'Below a blob you pick, following lines'
   };
+  // What Bouncing is, in one line (owner request).
+  const about = document.createElement('p');
+  about.className = 'formation-about';
+  about.textContent = 'Bouncing moves the selected blobs into a shape. Others make room; undo puts them back.';
+  menu.append(about);
   for (const f of FORMATIONS) {
     const b = document.createElement('button');
     b.type = 'button';

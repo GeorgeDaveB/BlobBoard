@@ -99,6 +99,7 @@ Numbered so the build phases and tests can refer to them.
 
 **Formations and releasing** (owner, 2026-10-07 — phase 3d)
 - **R34** **Bouncing** (formations). Code name: *Formation* (`services/formations.js`, `ui/formationPanel.js`); on screen: **Bouncing**.
+  - **Names on screen** (owner, 2026-10-11): **Ring**, **Rows**, **Top down** (code id `pyramid`). The menu starts with one line saying what Bouncing is: "Bouncing moves the selected blobs into a shape. Others make room; undo puts them back."
   - **Button:** top bar, next to the Pan/Select button. Greyed out until **3 or more blobs** are selected; pressing it greyed out shows "Select multiple items first". Opens a list: **Ring**, **Rows**, **Pyramid**.
   - **Who takes part:** the selected blobs. The selection box picks up **free blobs only** (blobs directly on the canvas); a blob inside another blob (a mini, in an open tray or container) is added with **Ctrl/Shift+click** (PC only for now). If the selection includes minis, ask **"Move already grouped items?"** — Yes: they leave their old parent and become free blobs in the formation (same undo step); No: they are left out. A blob that has minis always moves as one unit with its contents.
   - **Royalty** (Ring, Pyramid): a banner "Tap the royalty · Cancel"; tap **any free blob**, selected or not. The royalty **does not move**; the others arrange around / below it. The royalty is only used while placing — **no lasting relationship** is stored. The pick step (`pickBlob(prompt)`) is reusable for later "select one, the others group around" features.

@@ -416,7 +416,11 @@ html, body {
 .switch:checked { background: var(--ink); }
 .switch:checked::after { transform: translateX(18px); }
 
-/* Settings side pane: fields use the sheet's own padding. */
+/* Settings side pane: fields use the sheet's own padding. On phones it
+   takes half the screen (owner), the rest of the board stays visible. */
+@media (max-width: 759px) {
+  .settings-sheet { max-height: 50dvh; }
+}
 .settings-sheet .choice-group, .settings-sheet .range-field { padding: 0; }
 .settings-section { padding: 10px 0 0; margin: 0; border-top: 1px solid var(--line); }
 .settings-sheet .settings-note { margin: 0; }
@@ -490,6 +494,7 @@ html, body {
   text-align: left;
   cursor: pointer;
 }
+.formation-about { margin: 6px 12px 8px; max-width: 240px; color: var(--muted); font-size: 13px; line-height: 1.35; }
 .formation-item small { color: var(--muted); font-weight: 400; font-size: 13px; }
 .formation-item:hover, .formation-item:focus-visible { background: rgba(0, 0, 0, .05); outline: none; }
 .formation-bar {

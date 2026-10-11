@@ -318,7 +318,7 @@ export function pyramidLayout(royalty, nodes, links = []) {
 export const FORMATIONS = [
   { id: 'ring', label: 'Ring', royalty: true, lines: true, minMembers: 1, layout: ({ royalty, nodes, links }) => ringLayout(royalty, nodes, links) },
   { id: 'rows', label: 'Rows', royalty: false, lines: false, minMembers: 2, layout: ({ nodes, links, opts }) => rowsLayout(nodes, links, opts) },
-  { id: 'pyramid', label: 'Pyramid', royalty: true, lines: false, minMembers: 1, layout: ({ royalty, nodes, links }) => pyramidLayout(royalty, nodes, links) }
+  { id: 'pyramid', label: 'Top down', royalty: true, lines: false, minMembers: 1, layout: ({ royalty, nodes, links }) => pyramidLayout(royalty, nodes, links) }
 ];
 
 export const formationById = id => FORMATIONS.find(f => f.id === id) || null;

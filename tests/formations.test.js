@@ -45,6 +45,7 @@ function setup() {
 export const tests = {
   'registry: Ring, Rows, Pyramid; Ring alone offers "+ lines"': () => {
     assertEqual(FORMATIONS.map(f => f.id), ['ring', 'rows', 'pyramid']);
+    assertEqual(FORMATIONS.map(f => f.label), ['Ring', 'Rows', 'Top down'], 'on-screen names');
     assertEqual(FORMATIONS.filter(f => f.lines).map(f => f.id), ['ring']);
     assertEqual(FORMATIONS.filter(f => f.royalty).map(f => f.id), ['ring', 'pyramid']);
   },

@@ -1,6 +1,6 @@
 # BlobBoard — Handover
 
-*Last updated: 2026-10-11 · version **2026-10-11a** (phase 3d) · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
+*Last updated: 2026-10-11 · version **2026-10-11b** (phase 3d + tweaks) · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
 
 BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas that you group, reorder, connect with lines and (later) tag. It is a PWA (installable web app) for Windows and Android, plain HTML/CSS/JS with **no build step and no dependencies**, hosted on GitHub Pages. Dropbox sync is planned (phase 8).
 
@@ -119,6 +119,7 @@ Tests: **118 passing** locally (2026-10-11).
 | 2026-10-07 | **R34 Bouncing (formations)** spec: Ring / Rows / Pyramid, top-bar button (greyed < 3), royalty = any free blob and stays put, no lasting royalty relationship, inner ring 8 spokes + outer rings in the gaps, Pyramid = link tree, "+ lines" Ring only; selection box = free blobs only, Ctrl/Shift+click adds minis ("Move already grouped items?") | Owner Q&A, 3 rounds |
 | 2026-10-07 | **R35** Release child(s) (editor + selection bar) and delete dialog **Dissolve parent / Dissolve family**; released minis ring around the parent / its old spot; direct minis only | Owner request during R34 Q&A |
 | 2026-10-11 | **Phase 3d built** (R34 + R35). As-built choices: Rows preview = real undoable steps replaced via `undoStep`; formation clear-out (`clearFormation`: slide out, then chain push) because the plain push trapped blobs between placed ones; selected minis drop out when their group closes; Release/Dissolve of a blob *inside a group* moves its minis up into that group; tray of a blob being released closes first; top bar tighter on ≤ 420 px phones | Built; deviations listed in DESIGN R35 "as built" |
+| 2026-10-11 | "Pyramid" shown as **Top down** (code id stays `pyramid`); one-line description of Bouncing at the top of its menu; ⚙ Settings on phones = **half the screen** (`.settings-sheet` max-height 50dvh; editors unchanged) | Owner request |
 
 ---
 
