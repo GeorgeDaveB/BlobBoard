@@ -413,6 +413,33 @@ export function createStore({ repo, now = () => Date.now() }) {
       return [...out].map(([spotId, list]) => ({ spotId, ids: list }));
     },
 
+    // Phase 4: how many items (on every canvas) use picture `imageId`.
+    pictureUses(imageId) {
+      let n = 0;
+      for (const doc of canvases.values()) for (const it of Object.values(doc.items)) if (it.thumbId === imageId) n++;
+      return n;
+    },
+
+    // A picture is deleted from the library: items using it go back to their
+    // colour. One undo step per canvas (the current one can be undone).
+    clearPicture(imageId, opts = {}) {
+      let n = 0;
+      for (const id of canvases.keys()) {
+        commit(opts.coalesce, (doc, t) => {
+          let changed = false;
+          for (const it of Object.values(doc.items)) {
+            if (it.thumbId !== imageId) continue;
+            it.thumbId = null;
+            it.updatedAt = t;
+            changed = true;
+            n++;
+          }
+          if (!changed) return false;
+        }, id);
+      }
+      return n;
+    },
+
     // R34: a formation's final positions (board blobs: placed + pushed
     // aside) and any new lines ([{ from, to }], skipped if not allowed) as
     // one step.

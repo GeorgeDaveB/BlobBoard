@@ -13,6 +13,7 @@
   --shadow-2: 0 2px 6px rgba(40, 30, 20, .10), 0 12px 32px rgba(40, 30, 20, .14);
   --radius: 18px;
   --topbar-h: 52px;
+  --foot-h: 0px; /* phone footer with the canvas name (set below) */
   --font: system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -109,7 +110,7 @@ html, body {
 .fab {
   position: fixed;
   right: max(20px, env(safe-area-inset-right));
-  bottom: max(20px, env(safe-area-inset-bottom));
+  bottom: calc(max(20px, env(safe-area-inset-bottom)) + var(--foot-h));
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -251,7 +252,7 @@ html, body {
 .toasts {
   position: fixed;
   left: 50%;
-  bottom: calc(92px + env(safe-area-inset-bottom));
+  bottom: calc(92px + env(safe-area-inset-bottom) + var(--foot-h));
   transform: translateX(-50%);
   z-index: 40;
   pointer-events: none;
@@ -328,7 +329,7 @@ html, body {
 .select-bar {
   position: fixed;
   left: 50%;
-  bottom: calc(18px + env(safe-area-inset-bottom));
+  bottom: calc(18px + env(safe-area-inset-bottom) + var(--foot-h));
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -536,3 +537,47 @@ html, body {
   .tools .icon-btn { width: 34px; }
   .tool-sep { margin: 0 2px; }
 }
+
+/* ---- phone footer: the canvas name moves to the bottom (owner) ---- */
+.footbar { display: none; }
+@media (max-width: 759px) {
+  :root { --foot-h: 30px; }
+  .topbar .canvas-name { display: none; }
+  .topbar { justify-content: flex-end; }
+  .footbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    height: calc(var(--foot-h) + env(safe-area-inset-bottom));
+    padding: 0 max(16px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(16px, env(safe-area-inset-left));
+    background: rgba(247, 244, 239, .92);
+    border-top: 1px solid var(--line);
+    z-index: 20;
+  }
+  .foot-name { min-width: 0; font-weight: 650; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* ---- pictures (phase 4): editor row, library grid, picker ---- */
+.pic-field { display: flex; flex-direction: column; gap: 6px; }
+.pic-row { display: flex; align-items: center; gap: 12px; }
+.pic-row-btns { display: flex; align-items: center; gap: 8px; }
+.pic-prev { width: 56px; height: 56px; border-radius: 12px; overflow: hidden; background: var(--line); flex: none; }
+.pic-prev img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pic-note { color: var(--muted); }
+.pic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.pic-empty { color: var(--muted); margin: 4px 0; grid-column: 1 / -1; }
+.pic-cell { position: relative; }
+.pic-thumb { display: block; width: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: 12px; overflow: hidden; background: var(--line); cursor: pointer; }
+.pic-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pic-cell.on .pic-thumb { box-shadow: 0 0 0 3px var(--ink); }
+.pic-del {
+  position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; border: 0;
+  background: rgba(30, 25, 20, .7); color: #fff; font-size: 16px; line-height: 1; cursor: pointer;
+}
+.pic-modal { width: min(520px, 100%); max-height: min(80dvh, 640px); display: flex; flex-direction: column; gap: 12px; }
+.pic-modal .pic-grid { overflow-y: auto; min-height: 90px; }
+.pic-head { display: flex; align-items: center; justify-content: space-between; }
+.pic-head h2 { margin: 0; }
+.pic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.add-pics { display: inline-flex; align-items: center; justify-content: center; align-self: flex-start; }
+.add-pics.busy { opacity: .6; pointer-events: none; }

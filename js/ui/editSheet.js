@@ -3,11 +3,12 @@
 import { createColorPicker } from './colorPicker.js';
 import { LIMITS, childrenOf } from '../core/model.js';
 import { createRichEditor, notesHtmlOf } from './richText.js';
+import { openPicturePicker } from './imageLibrary.js';
 
 let sessionSeq = 0;
 export const newSessionKey = () => 'edit:' + (++sessionSeq);
 
-export function createEditSheet({ host, store, onRequestClose, onDelete, onRelease }) {
+export function createEditSheet({ host, store, pictures, onRequestClose, onDelete, onRelease }) {
   const sheet = document.createElement('section');
   sheet.className = 'sheet';
   sheet.setAttribute('role', 'dialog');
@@ -39,6 +40,40 @@ export function createEditSheet({ host, store, onRequestClose, onDelete, onRelea
   const notes = rich.box;
   const picker = createColorPicker({ onChange: hex => update({ color: hex }) });
 
+  // Picture (phase 4): preview + Choose… (opens the library) + Remove.
+  const picRow = document.createElement('div');
+  picRow.className = 'pic-row';
+  const picPrev = document.createElement('div');
+  picPrev.className = 'pic-prev';
+  const picImg = document.createElement('img');
+  picImg.alt = '';
+  picPrev.append(picImg);
+  const picChoose = document.createElement('button');
+  picChoose.type = 'button';
+  picChoose.className = 'btn';
+  const picRemove = document.createElement('button');
+  picRemove.type = 'button';
+  picRemove.className = 'btn-text';
+  picRemove.textContent = 'Remove';
+  const picNote = document.createElement('small');
+  picNote.className = 'pic-note';
+  picNote.textContent = 'Pictures are switched off for this canvas (⚙ → Canvas).';
+  const picBtns = document.createElement('div');
+  picBtns.className = 'pic-row-btns';
+  picBtns.append(picChoose, picRemove);
+  picRow.append(picPrev, picBtns);
+  const picField = document.createElement('div');
+  picField.className = 'pic-field';
+  picField.append(picRow, picNote);
+  picChoose.addEventListener('click', async () => {
+    if (!pictures || !itemId) return;
+    const id = itemId;
+    const res = await openPicturePicker({ pictures, current: store.item(id) && store.item(id).thumbId });
+    if (!res || itemId !== id) return;
+    update({ thumbId: res.remove ? null : res.id });
+  });
+  picRemove.addEventListener('click', () => update({ thumbId: null }));
+
   const doneRow = document.createElement('label');
   doneRow.className = 'toggle';
   const doneBox = document.createElement('input');
@@ -60,7 +95,7 @@ export function createEditSheet({ host, store, onRequestClose, onDelete, onRelea
   del.className = 'btn btn-danger btn-wide';
   del.textContent = 'Delete item';
 
-  body.append(field('Title', title), field('Notes', rich.el), field('Colour', picker.el), doneRow, release, del);
+  body.append(field('Title', title), field('Notes', rich.el), field('Colour', picker.el), field('Picture', picField), doneRow, release, del);
   sheet.append(head, body);
   host.append(sheet);
 
@@ -94,6 +129,12 @@ export function createEditSheet({ host, store, onRequestClose, onDelete, onRelea
     doneBox.checked = it.done;
     picker.setValue(it.color);
     release.hidden = !onRelease || childrenOf(store.canvas(), itemId).length === 0;
+    const pic = it.thumbId && pictures ? pictures.get(it.thumbId) : null;
+    picPrev.hidden = !pic;
+    if (pic && picImg.src !== pic.url) picImg.src = pic.url;
+    picChoose.textContent = pic ? 'Change…' : 'Choose…';
+    picRemove.hidden = !it.thumbId;
+    picNote.hidden = !it.thumbId || store.canvas().settings.thumbnails !== false;
     autosize();
   }
 

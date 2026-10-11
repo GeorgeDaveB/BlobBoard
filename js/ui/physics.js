@@ -156,7 +156,7 @@ export function createPhysics(layer, body, seed) {
   // 4 slow oscillators: top/bottom horizontal radii, left/right vertical radii.
   const osc = [0, 1, 2, 3].map(() => ({ A: 6 + r() * 5, w: (Math.PI * 2) / (9000 + r() * 5000), p: r() * Math.PI * 2 }));
 
-  const s = { pvx: 0, pvy: 0, last: null, dragging: false, swollen: false, swellScale: 1.12, rd: 1, vrd: 0, rdT: 1 };
+  const s = { pvx: 0, pvy: 0, last: null, dragging: false, swollen: false, swellScale: 1.12, rd: 1, vrd: 0, rdT: 1, card: false };
   for (const k of KEYS) { s[k] = REST[k]; s['v' + k] = 0; }
   let contacts = [];
   let lastRadius = '';
@@ -268,7 +268,7 @@ export function createPhysics(layer, body, seed) {
     // Outline = slow wobble, then each side flattened by its amount.
     _shape(now) {
       let tX = 0, bX = 0, lY = 0, rY = 0;
-      if (on('wobble')) {
+      if (on('wobble') && !s.card) { // cards (phase 4) keep a still outline
         tX = osc[0].A * Math.sin(now * osc[0].w + osc[0].p);
         bX = osc[1].A * Math.sin(now * osc[1].w + osc[1].p);
         lY = osc[2].A * Math.sin(now * osc[2].w + osc[2].p);
@@ -356,6 +356,13 @@ export function createPhysics(layer, body, seed) {
       if (!list.length && !contacts.length) return;
       contacts = list;
       wake();
+    },
+
+    // Phase 4: a picture card has no idle wobble (drag squash and bounces stay).
+    setCard(on) {
+      if (s.card === !!on) return;
+      s.card = !!on;
+      h._shape(performance.now());
     },
 
     // Roundness jumps to its target (morph switched off).

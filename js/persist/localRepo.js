@@ -35,6 +35,12 @@ export async function openRepo({ dbName = DB_NAME } = {}) {
       schedule();
     },
 
+    // Picture library (phase 4): { id, blob, w, h, bytes, createdAt, deleted? }.
+    // Written straight away (not batched): pictures are added rarely.
+    loadImages() { return db.getAll('images'); },
+    putImage(rec) { return db.put('images', rec); },
+    deleteImage(id) { return db.del('images', id); },
+
     async getSetting(key) {
       if (pendingSettings.has(key)) return pendingSettings.get(key);
       const row = await db.get('settings', key);

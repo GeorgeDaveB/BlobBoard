@@ -16,7 +16,7 @@ const EDGE_SPEED = 14;  // max auto-pan speed (px per frame)
 const DOT = 24;         // background dot spacing at zoom 1
 const ARM_MS = 500;     // hold over a blob this long to drop *into* it
 
-export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreateAt, onTapEmpty, onViewChange, onDeleteLink, onEditLink }) {
+export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInside, onCreateAt, onTapEmpty, onViewChange, onDeleteLink, onEditLink }) {
   const boardEl = document.createElement('div');
   boardEl.className = 'board';
   const world = document.createElement('div');
@@ -152,6 +152,14 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     if (onViewChange) onViewChange(view);
   }
 
+  // Phase 4: the picture to show for a thumbId, or null (thumbnails off for
+  // this canvas, no picture, or not on this device -> colour).
+  function picOf(thumbId) {
+    const doc = store.canvas();
+    if (!thumbId || !pictures || !doc || doc.settings.thumbnails === false) return null;
+    return pictures.get(thumbId);
+  }
+
   function boardItems() {
     const doc = store.canvas();
     return doc ? Object.values(doc.items).filter(it => it.parentId === null) : [];
@@ -165,7 +173,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
     const seen = new Set();
     allEls.clear();
     const container = doc.settings.insideView === 'container';
-    const trayCtx = { doc, ui, container, onEdit, onNotes, onAdd: onAddInside, register: (id, el) => allEls.set(id, el) };
+    const trayCtx = { doc, ui, container, picOf, onEdit, onNotes, onAdd: onAddInside, register: (id, el) => allEls.set(id, el) };
 
     for (const item of boardItems()) {
       seen.add(item.id);
@@ -181,7 +189,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const kids = childrenOf(doc, item.id);
       el._kidCount = kids.length;
       const selected = ui.selectedId === item.id || ui.selectedIds.includes(item.id);
-      updateItemEl(el, item, { selected, kids, expanded, container, growth: doc.settings.growth });
+      updateItemEl(el, item, { selected, kids, expanded, container, growth: doc.settings.growth, picOf });
       allEls.set(item.id, el);
       if (!drag || drag.id !== item.id || drag.ghost) {
         positionEl(el, item.x, item.y);
@@ -534,7 +542,7 @@ export function createBoard({ host, store, onEdit, onNotes, onAddInside, onCreat
       const miniEl = allEls.get(id);
       if (!miniEl) return;
       const ghost = createItemEl(item, { onEdit });
-      updateItemEl(ghost, item, { kids: childrenOf(doc, id) });
+      updateItemEl(ghost, item, { kids: childrenOf(doc, id), picOf });
       ghost.classList.add('ghost');
       ghost.style.zIndex = 1000000;
       itemsLayer.append(ghost);

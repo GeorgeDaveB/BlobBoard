@@ -3,6 +3,7 @@ import { openRepo } from './persist/localRepo.js';
 import { createStore } from './core/store.js';
 import { newCanvas, sanitizeCanvas } from './core/model.js';
 import { mountApp } from './ui/app.js';
+import { createPictureLibrary } from './ui/pictures.js';
 
 async function boot() {
   const repo = await openRepo();
@@ -18,8 +19,10 @@ async function boot() {
 
   const store = createStore({ repo });
   store.load(canvases, current.id);
+  // Picture library (phase 4); a broken one never stops the app.
+  const pictures = await createPictureLibrary(repo, canvases).catch(err => { console.error('Pictures unavailable', err); return null; });
 
-  mountApp({ root: document.getElementById('app'), store, repo });
+  mountApp({ root: document.getElementById('app'), store, repo, pictures });
 
   // Save right away when the app is hidden or closed (phones kill background apps).
   document.addEventListener('visibilitychange', () => { if (document.hidden) repo.flush(); });

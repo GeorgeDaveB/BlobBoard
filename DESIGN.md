@@ -57,6 +57,10 @@ Numbered so the build phases and tests can refer to them.
 - **R6** Colour: 8 base colours + a drag colour picker.
 - **R7** Thumbnails picked from pictures on the device (multi-file picker) into a shared picture library.
 - **R8** Look: animated organic blob. Thumbnails toggle ON → items that have a thumbnail become rounded Pinterest cards, the rest stay blobs. OFF → everything is a blob. The change animates.
+  - *As built (phase 4, 2026-10-11, owner took all defaults):* **Picture** row in the item editor (preview, **Choose…/Change…** opens the library: **Add pictures** — several at once; Android's picker offers the camera — tap one to use it, **Remove picture**; adding exactly one picture in the picker uses it straight away). ⚙ → **Pictures** tab: the library on this device (count + size), Add pictures, × deletes one ("Used by N items — they go back to their colour", Undo). ⚙ → Canvas: **Show pictures** switch (= `settings.thumbnails`, per canvas, C4).
+  - **Card:** 180 px wide (× growth, R30), rounded rectangle (roundness 0.2, so lines attach to its rounded-rectangle edge), picture on top keeping its shape (height/width 0.6–1.6, cropped beyond), title on a dark see-through pill over the picture's bottom edge, notes underneath (3 lines, fading); badge + mini shapes under the card. **No idle wobble** (drag squash, bounces and floating stay). An open container (container view) stays a container without the picture.
+  - **Minis with a picture** (switch on): the picture as a round crop instead of the colour, title on a small pill; the collapsed group's mini shapes show the picture too.
+  - **Pictures:** longest side 640 px, WebP quality 0.82, turned upright from the photo's rotation info; id = SHA-256 of the original file (`p-…`), so the same picture is stored once. Unreadable formats (e.g. some HEIC) / non-pictures / files over 40 MB → a clear message. Deleting hides the picture until the next start (so Undo works); then it is removed if nothing uses it.
 - **R9** Notes: the item grows to fit its notes; collapsed it shows the first ~3 lines, fading out (title: 2 lines) — text never shows outside the outline. Fully expanded (R16) it shows the whole description. Styling: R32.
 - **R10** Tags: reusable, chosen from a dropdown. Typing a new one creates it, and it's available from then on. Shown as chips on the item. A list to rename/delete tags. Shared across all canvases.
 - **R11** Tag filter on the board.
@@ -95,6 +99,7 @@ Numbered so the build phases and tests can refer to them.
 
 **Selection**
 - **R24** Select several items at once by dragging a selection box over an area (like selecting icons on a desktop), then move them together by dragging any one of them.
+- **R36** *(owner, 2026-10-11)* On phones (narrower than 760 px) the **canvas name sits in a footer bar at the bottom**; the top bar keeps only the tools. The + button, selection bar and messages sit above the footer.
 - **R25** A new item stays from the moment it's created, even untitled (several items may share the name "Untitled"). Only Delete or Undo removes it.
 
 **Formations and releasing** (owner, 2026-10-07 — phase 3d)
@@ -297,12 +302,13 @@ BlobBoard/
 │  ├─ persist/   ✅ db.js · localRepo.js
 │  ├─ sync/      phase 8 — dropboxAuth.js · dropboxApi.js · syncEngine.js · merge.js
 │  ├─ services/  ✅ layout.js · geometry.js · color.js · strand.js (gooey-string geometry) ·
-│  │                formations.js (R34 layouts: Ring, Rows, Pyramid)
-│  │             phase 4/7 — imageProcessor.js · exportJson.js · exportPng.js
+│  │                formations.js (R34 layouts: Ring, Rows, Pyramid) · imageProcessor.js (phase 4)
+│  │             phase 7 — exportJson.js · exportPng.js
 │  └─ ui/        ✅ app.js · board.js · itemView.js · tray.js · physics.js · gestures.js ·
 │                   linksLayer.js · lineSheet.js · lineLookFields.js · richText.js · motionPanel.js ·
-│                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js · formationPanel.js (R34)
-│                phase 4+ — tagPicker.js · imageLibrary.js · canvasMenu.js
+│                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js · formationPanel.js (R34) ·
+│                   pictures.js (picture library at run time) · imageLibrary.js (picker + grid)
+│                phase 5+ — tagPicker.js · canvasMenu.js
 ├─ icons/                  phase 9 — app icons (192 px, 512 px, maskable)
 ├─ tests/                  ✅ index.html + runner.js + smoke/model/services/store/physics/links/select/richtext
 │                             .test.js (in-browser unit tests, 98)
@@ -705,7 +711,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 3b Multi-select ✅ | Pan/Select mode button (✋/⬚, H/V), selection box, Ctrl/Shift+click, move many with physics and push-apart, drop many into a group, delete many | R24 checklist passes |
 | 3c Polish ✅ (added) | line look + text + editor (R31), styled descriptions (R32), Motion tab + idle-stopping loop (R33), settings side pane, hover affordances | owner checks on phone |
 | 3d Bouncing + release ✅ (added) | R34 formations (Ring, Rows, Pyramid; Bouncing button; royalty pick; Ctrl/Shift+click minis; "+ lines" for Ring) and R35 (Release child(s); Dissolve parent / family) | layout unit tests; owner checks on phone |
-| 4 Pictures and cards | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
+| 4 Pictures and cards ✅ | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
 | 5 Tags | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
 | 7 Export / import | file export/import, PNG picture, Android share | round-trip test passes |

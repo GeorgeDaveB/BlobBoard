@@ -404,3 +404,56 @@
 .rich-text ul[data-b="tick"] { list-style-type: '✓ '; }
 /* Inside a closed blob the lists sit centred as a block, text left-aligned. */
 .item-notes.rich-text ul, .item-notes.rich-text ol { display: inline-block; max-width: 100%; vertical-align: top; }
+
+/* ---- picture cards (phase 4, R8) ----
+   Thumbnails on + a picture: a rounded card, picture on top keeping its own
+   shape (aspect set by itemView.js, 0.6–1.6), the title on a dark pill over
+   the picture's bottom edge, notes underneath. Grows with inside items (R30). */
+.item-pic { display: none; }
+.item.card > .item-jelly > .item-body {
+  width: calc(180px * var(--grow, 1));
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  padding: 0 0 10px;
+  justify-content: flex-start;
+  gap: 8px;
+}
+.item.card > .item-jelly > .item-body > .item-pic {
+  display: block;
+  position: relative;
+  align-self: stretch;
+  overflow: hidden;
+  background: rgba(0, 0, 0, .08);
+}
+.item.card > .item-jelly > .item-body > .item-pic > img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; user-select: none; }
+.item.card > .item-jelly > .item-body > .item-pic > .item-title {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  max-width: none;
+  margin: 0 auto;
+  width: max-content;
+  max-width: calc(100% - 16px);
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(20, 16, 12, .62);
+  color: #fff;
+  font-size: 14px;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.item.card > .item-jelly > .item-body > .item-notes { max-width: none; padding: 0 14px; align-self: stretch; }
+.item.card:not(.has-notes) > .item-jelly > .item-body { padding-bottom: 0; }
+.item.card.expanded > .item-jelly > .item-body { width: calc(220px * var(--grow, 1)); }
+.item.card > .item-jelly > .item-done { top: 8px; left: 8px; }
+
+/* A mini with a picture: the picture as a round crop instead of the colour;
+   its title gets a pill so it stays readable. */
+.item.pic-blob > .item-jelly > .item-body { background: var(--c) var(--pic) center / cover no-repeat; }
+.item.pic-blob > .item-jelly > .item-body > .item-title { padding: 2px 8px; border-radius: 9px; background: rgba(20, 16, 12, .6); color: #fff; }
+.item.pic-blob > .item-jelly > .item-body > .item-notes { display: none; }
+.kid-shape.has-pic { background: var(--c) var(--pic) center / cover no-repeat; }
+/* (beats the expanded-with-notes size rule) */
+.item.card.expanded.has-notes > .item-jelly > .item-body { width: calc(220px * var(--grow, 1)); max-width: none; padding: 0 0 12px; }

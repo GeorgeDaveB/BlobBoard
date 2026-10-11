@@ -3,6 +3,8 @@
 //   .item (position, moved by JS)
 //     .item-jelly (physics transform)
 //       .item-body (outline set by physics + CSS bob; clips its text)
+//         card picture (phase 4: thumbnails on + a picture; the title then
+//         sits on a pill over the picture's bottom edge),
 //         title, notes preview, and in container view: description box
 //         (tap to edit in place, − to hide) + the inline grid (tray.js)
 //       .item-done (✓ when done)
@@ -112,7 +114,17 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
 
   el.append(jellyLayer, link, edit);
   applyBob(body, item.seed);
-  el._parts = { body, title, notes, kids, shapes, badge, desc, descText, descInput, descShow };
+  // Card picture (created when first needed).
+  const pic = document.createElement('div');
+  pic.className = 'item-pic';
+  pic.hidden = true;
+  const img = document.createElement('img');
+  img.alt = '';
+  img.draggable = false;
+  img.decoding = 'async';
+  pic.append(img);
+  body.prepend(pic);
+  el._parts = { body, title, notes, kids, shapes, badge, desc, descText, descInput, descShow, pic, img };
   el._editingDesc = () => !descInput.hidden;
   el._phys = createPhysics(jellyLayer, body, item.seed);
   return el;
@@ -154,9 +166,12 @@ function showDesc(el) {
 }
 
 // ctx: { selected, kids (inside items, in tray order), expanded,
-//        container (expanded in container view) }
+//        container (expanded in container view), growth,
+//        picOf(thumbId) -> { url, aspect } | null (null when the canvas's
+//        thumbnails are off or the picture isn't on this device) }
 export function updateItemEl(el, item, ctx) {
   const p = el._parts;
+  const picOf = ctx.picOf || (() => null);
   el._notes = item.notes;
   el._notesHtml = item.notes || item.notesHtml ? notesHtmlOf(item) : '';
   const container = !!(ctx.expanded && ctx.container);
@@ -181,10 +196,39 @@ export function updateItemEl(el, item, ctx) {
     el._sig = sig;
   }
 
-  // Collapsed group: up to 6 mini shapes in the inside items' colours + badge.
+  // Phase 4 (R8): with a picture and thumbnails on, a board item is a card
+  // (picture on top, title on a pill over it, notes underneath); a mini
+  // shows the picture as a round crop instead of its colour. An open
+  // container stays a container.
+  const pic = picOf(item.thumbId);
+  const mini = el.classList.contains('mini');
+  const card = !!pic && !mini && !container;
+  const picBlob = !!pic && mini && !container;
+  if (el._picUrl !== (pic && pic.url) || el._card !== card || el._picBlob !== picBlob) {
+    el.classList.toggle('card', card);
+    el.classList.toggle('pic-blob', picBlob);
+    p.pic.hidden = !card;
+    if (card) {
+      if (p.img.src !== pic.url) p.img.src = pic.url;
+      p.pic.style.aspectRatio = '1 / ' + pic.aspect.toFixed(3);
+      if (p.title.parentElement !== p.pic) p.pic.append(p.title);
+    } else if (p.title.parentElement !== p.body) {
+      p.pic.after(p.title);
+    }
+    if (picBlob) p.body.style.setProperty('--pic', 'url("' + pic.url + '")');
+    else p.body.style.removeProperty('--pic');
+    el._picUrl = pic && pic.url;
+    el._card = card;
+    el._picBlob = picBlob;
+  }
+  el._phys.setCard(card);
+
+  // Collapsed group: up to 6 mini shapes in the inside items' colours (or
+  // their pictures) + badge.
   const kids = ctx.kids || [];
   const showKids = kids.length > 0 && !ctx.expanded;
-  const kidSig = showKids ? kids.length + ':' + kids.slice(0, 6).map(k => k.color).join(',') : '';
+  const kidPics = showKids ? kids.slice(0, 6).map(k => picOf(k.thumbId)) : [];
+  const kidSig = showKids ? kids.length + ':' + kids.slice(0, 6).map((k, i) => k.color + (kidPics[i] ? kidPics[i].url : '')).join(',') : '';
   if (el._kidSig !== kidSig) {
     p.kids.hidden = !showKids;
     if (showKids) {
@@ -192,6 +236,7 @@ export function updateItemEl(el, item, ctx) {
         const s = document.createElement('span');
         s.className = 'kid-shape';
         s.style.setProperty('--c', k.color);
+        if (kidPics[i]) { s.classList.add('has-pic'); s.style.setProperty('--pic', 'url("' + kidPics[i].url + '")'); }
         s.style.setProperty('--d', (-i * 0.7).toFixed(1) + 's');
         return s;
       }));
@@ -213,7 +258,7 @@ export function updateItemEl(el, item, ctx) {
   el.classList.toggle('selected', !!ctx.selected);
   // Text needs a squarer outline to stay inside: a bit with notes, a lot
   // when fully expanded (whole description shown). Morphs with a spring.
-  el._phys.setRoundness(container ? 0.16 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
+  el._phys.setRoundness(container ? 0.16 : card ? 0.2 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
 }
 
 export const MAX_GROW = 5;

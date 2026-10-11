@@ -10,6 +10,7 @@ import { MAX_GROW } from './itemView.js';
 import { createLineLookFields } from './lineLookFields.js';
 import { confirmDialog, toast } from './dialogs.js';
 import { createMotionPanel } from './motionPanel.js';
+import { createLibraryGrid, addPicturesButton } from './imageLibrary.js';
 
 let sliderSeq = 0;
 const OPTIONS = [
@@ -18,7 +19,7 @@ const OPTIONS = [
 ];
 
 // motion: { get(), set(next) } — the device's motion switches (app.js).
-export function createSettingsSheet({ host, store, onRequestClose, motion }) {
+export function createSettingsSheet({ host, store, pictures, onRequestClose, motion }) {
   const sheet = document.createElement('section');
   sheet.className = 'sheet settings-sheet';
   sheet.setAttribute('role', 'dialog');
@@ -48,7 +49,37 @@ export function createSettingsSheet({ host, store, onRequestClose, motion }) {
   const motionPane = document.createElement('div');
   motionPane.className = 'settings-pane';
   motionPane.append(motionPanel.el);
-  const tabBtns = [['canvas', 'Canvas', canvasPane], ['motion', 'Motion', motionPane]].map(([id, text, pane]) => {
+  // Pictures (phase 4): the library on this device — add, delete.
+  const picsPane = document.createElement('div');
+  picsPane.className = 'settings-pane';
+  const picsInfo = document.createElement('small');
+  picsInfo.className = 'range-hint';
+  const picsGrid = pictures ? createLibraryGrid({ pictures, onDelete: id => deletePicture(id), empty: 'No pictures yet. Add some, then pick one for an item in its editor (✎ → Picture).' }) : null;
+  if (pictures) {
+    picsPane.append(addPicturesButton(pictures, () => {}), picsInfo, picsGrid.el);
+    pictures.on(() => { picsGrid.refresh(); showPicsInfo(); });
+  }
+  function showPicsInfo() {
+    const n = pictures.list().length;
+    const kb = Math.round(pictures.totalBytes() / 1024);
+    picsInfo.textContent = n ? n + ' picture' + (n === 1 ? '' : 's') + ' on this device (' + (kb > 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' KB') + '). × deletes one; items using it go back to their colour.' : '';
+  }
+  async function deletePicture(id) {
+    const n = store.pictureUses(id);
+    const ok = await confirmDialog({
+      title: 'Delete this picture?',
+      message: n ? 'Used by ' + n + ' item' + (n === 1 ? '' : 's') + '. They go back to their colour. You can undo this.' : 'No item uses it.',
+      okLabel: 'Delete',
+      danger: true
+    });
+    if (!ok) return;
+    const key = 'picture-delete:' + (++sliderSeq);
+    store.clearPicture(id, { coalesce: key });
+    await pictures.remove(id);
+    toast('Picture deleted', { actionLabel: 'Undo', onAction: () => { store.undoStep(key); pictures.restore(id); } });
+  }
+
+  const tabBtns = [['canvas', 'Canvas', canvasPane], ['pictures', 'Pictures', picsPane], ['motion', 'Motion', motionPane]].map(([id, text, pane]) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'seg-btn';
@@ -66,7 +97,23 @@ export function createSettingsSheet({ host, store, onRequestClose, motion }) {
       t.pane.hidden = !on;
     }
     if (id === 'motion') motionPanel.sync();
+    if (id === 'pictures' && pictures) { picsGrid.refresh(); showPicsInfo(); }
   }
+
+  // R8 / C4: thumbnails switch, per canvas.
+  const thumbRow = document.createElement('label');
+  thumbRow.className = 'toggle-row';
+  const thumbText = document.createElement('span');
+  const thumbStrong = document.createElement('strong');
+  thumbStrong.textContent = 'Show pictures';
+  const thumbSmall = document.createElement('small');
+  thumbSmall.textContent = 'Items with a picture become cards. Off: every item is a blob.';
+  thumbText.append(thumbStrong, thumbSmall);
+  const thumbSwitch = document.createElement('input');
+  thumbSwitch.type = 'checkbox';
+  thumbSwitch.className = 'switch';
+  thumbRow.append(thumbText, thumbSwitch);
+  thumbSwitch.addEventListener('change', () => store.setCanvasSetting('thumbnails', thumbSwitch.checked));
 
   const group = document.createElement('fieldset');
   group.className = 'choice-group';
@@ -167,8 +214,8 @@ export function createSettingsSheet({ host, store, onRequestClose, motion }) {
   note.className = 'settings-note';
   note.textContent = 'Saved with this canvas. · Version ' + APP_VERSION;
 
-  canvasPane.append(group, grow, linesTitle, linesHint, lineLook.el, applyAll);
-  body.append(tabs, canvasPane, motionPane, note);
+  canvasPane.append(thumbRow, group, grow, linesTitle, linesHint, lineLook.el, applyAll);
+  body.append(tabs, canvasPane, picsPane, motionPane, note);
   showTab('canvas');
   sheet.append(head, body);
   host.append(sheet);
@@ -179,6 +226,7 @@ export function createSettingsSheet({ host, store, onRequestClose, motion }) {
   function sync() {
     const doc = store.canvas();
     if (!doc) return;
+    thumbSwitch.checked = doc.settings.thumbnails !== false;
     for (const r of radios) r.checked = doc.settings.insideView === r.value;
     if (document.activeElement !== slider || !sliderKey) slider.value = String(doc.settings.growth);
     showGrow(doc.settings.growth);

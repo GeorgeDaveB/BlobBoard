@@ -11,7 +11,7 @@
 import { childrenOf } from '../core/model.js';
 import { createItemEl, updateItemEl } from './itemView.js';
 
-// ctx: { doc, ui, container (bool), onEdit, onNotes, onAdd, register }
+// ctx: { doc, ui, container (bool), picOf, onEdit, onNotes, onAdd, register }
 export function renderTray(trayEl, parent, depth, ctx) {
   const st = trayEl._st || (trayEl._st = { minis: new Map(), nested: null, add: null });
   const kids = childrenOf(ctx.doc, parent.id);
@@ -53,7 +53,8 @@ export function renderTray(trayEl, parent, depth, ctx) {
       selected: ctx.ui.selectedId === kid.id || ctx.ui.selectedIds.includes(kid.id),
       kids: childrenOf(ctx.doc, kid.id),
       expanded: isOpen,
-      container: ctx.container
+      container: ctx.container,
+      picOf: ctx.picOf
     });
     ctx.register(kid.id, el);
     // Container view: an open mini holds its own grid inside its body.

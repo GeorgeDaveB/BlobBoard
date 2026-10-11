@@ -1,6 +1,6 @@
 # BlobBoard — rules for AI assistants
 
-Start every session by reading `HANDOVER.md` (start with §0; status, decision log, how it works, gotchas, how to move the project), then the relevant part of `DESIGN.md` (requirements R1–R35, choices C1–C14).
+Start every session by reading `HANDOVER.md` (start with §0; status, decision log, how it works, gotchas, how to move the project), then the relevant part of `DESIGN.md` (requirements R1–R36, choices C1–C14).
 
 - Vanilla ES modules, no build step, no external libraries. Only `core/store.js` actions change data.
 - Every change: code + tests (for logic) + a dated line in HANDOVER.md's decision log + DESIGN.md if a requirement changed (back DESIGN.md up first). Update HANDOVER "Status" and test count. Bump `js/version.js` before every deploy.
@@ -17,4 +17,6 @@ One bullet, ≤15 words, no explanation.
 
 - Pages deploy stuck queued: poll live js/version.js, not GitHub API.
 
-Bullet count: 2/30
+- HANDOVER repeats "requirements R1–Rn"; doc patches must replace every occurrence.
+
+Bullet count: 3/30

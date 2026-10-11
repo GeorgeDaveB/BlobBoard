@@ -27,7 +27,7 @@ const ICONS = {
 
 const WIDE = '(min-width: 760px)';
 
-export function mountApp({ root, store, repo }) {
+export function mountApp({ root, store, repo, pictures = null }) {
   // ---- layout -------------------------------------------------------------
   const top = document.createElement('header');
   top.className = 'topbar';
@@ -62,7 +62,14 @@ export function mountApp({ root, store, repo }) {
   fab.className = 'fab';
   fab.setAttribute('aria-label', 'New item');
   fab.textContent = '+';
-  root.append(top, main, fab);
+  // Phones: the canvas name sits in a footer at the bottom (owner); the top
+  // bar keeps the tools.
+  const foot = document.createElement('footer');
+  foot.className = 'footbar';
+  const footName = document.createElement('div');
+  footName.className = 'foot-name';
+  foot.append(footName);
+  root.append(top, main, foot, fab);
   initDialogs(root);
 
   // "N selected · Delete · ✕" bar while several items are selected (R24).
@@ -123,6 +130,7 @@ export function mountApp({ root, store, repo }) {
   const board = createBoard({
     host: main,
     store,
+    pictures,
     onEdit: id => openEditor(id, { expand: true }),
     onNotes: (id, patch, key) => store.updateItem(id, patch, { coalesce: key }),
     onAddInside: id => createInside(id),
@@ -139,6 +147,7 @@ export function mountApp({ root, store, repo }) {
   const editor = createEditSheet({
     host: root,
     store,
+    pictures,
     onRequestClose: () => closeLayer(editorLayer),
     onDelete: id => deleteWithUndo(id),
     onRelease: id => releaseWithUndo([id])
@@ -194,6 +203,7 @@ export function mountApp({ root, store, repo }) {
   const settings = createSettingsSheet({
     host: root,
     store,
+    pictures,
     onRequestClose: () => closeLayer(settingsLayer),
     motion: {
       get: () => motion,
@@ -366,6 +376,7 @@ export function mountApp({ root, store, repo }) {
     const doc = store.canvas();
     if (!doc) return;
     name.textContent = doc.name;
+    footName.textContent = doc.name;
     btnUndo.disabled = !store.canUndo();
     btnRedo.disabled = !store.canRedo();
     const n = store.ui.selectedIds.length;
@@ -432,6 +443,9 @@ export function mountApp({ root, store, repo }) {
     else if ((e.key === 'Delete' || e.key === 'Backspace') && store.ui.selectedLinkId) { e.preventDefault(); deleteLinkWithUndo(store.ui.selectedLinkId); }
     else if (e.key === 'Enter' && store.ui.selectedId) { e.preventDefault(); openEditor(store.ui.selectedId, { expand: true }); }
   });
+
+  // A picture added or deleted: redraw cards and the open editor.
+  if (pictures) pictures.on(() => { board.render(); if (editor.isOpen) editor.refresh(); });
 
   // ---- Bouncing (R34) ----------------------------------------------------------
   const formations = createFormationUI({ root, store, board, openLayer, closeLayer });
