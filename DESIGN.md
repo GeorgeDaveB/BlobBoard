@@ -101,6 +101,9 @@ Numbered so the build phases and tests can refer to them.
 **Selection**
 - **R24** Select several items at once by dragging a selection box over an area (like selecting icons on a desktop), then move them together by dragging any one of them.
 - **R36** *(owner, 2026-10-11)* On phones (narrower than 760 px) the **canvas name sits in a footer bar at the bottom**; the top bar keeps only the tools. The + button, selection bar and messages sit above the footer.
+- **R37** **Shapes** *(owner, 2026-10-12)*: circle, rounded square, triangle, diamond, hexagon, trapezoid. A shape has a **title and a colour** only (no notes, tags, picture or done tick). Default size per shape; the selected shape shows **resize handles** — right edge (wider), bottom edge (taller), corner (both); the left/top edges stay put; one undo step, blobs it now overlaps are pushed aside. Shapes **take lines** (lines end on the real outline) and **take part in Bouncing** (also as royalty) — nothing else: they never go inside a blob and nothing goes inside them. No idle wobble (drag squash and bounces stay). Tap the selected shape (or ✎) → editor: Title, Shape (change type, keeps its size), Colour, Delete.
+- **R38** **Free text** *(owner, 2026-10-12)*: formatted text anywhere on the canvas with the **same toolbar as descriptions** (R32). No background; dark ink by default, colour from the palette; grows up to 320 px wide, then wraps. Tap to select, tap again to type in place (a new text starts typing at once); left empty, it is removed. Drag to move. **No lines, no Bouncing**, never inside blobs. ✎ opens the editor with Text + Text colour.
+- **+ button** (R37/R38): opens a menu — **Blob**, **Text**, and the six **Shapes**. Double-tapping empty space still makes a blob.
 - **R25** A new item stays from the moment it's created, even untitled (several items may share the name "Untitled"). Only Delete or Undo removes it.
 
 **Formations and releasing** (owner, 2026-10-07 — phase 3d)
@@ -303,7 +306,8 @@ BlobBoard/
 │  ├─ persist/   ✅ db.js · localRepo.js
 │  ├─ sync/      phase 8 — dropboxAuth.js · dropboxApi.js · syncEngine.js · merge.js
 │  ├─ services/  ✅ layout.js · geometry.js · color.js · strand.js (gooey-string geometry) ·
-│  │                formations.js (R34 layouts: Ring, Rows, Pyramid) · imageProcessor.js (phase 4)
+│  │                formations.js (R34 layouts: Ring, Rows, Pyramid) · imageProcessor.js (phase 4) ·
+│  │                shapes.js (R37 outlines, polygon edge distance)
 │  │             phase 7 — exportJson.js · exportPng.js
 │  └─ ui/        ✅ app.js · board.js · itemView.js · tray.js · physics.js · gestures.js ·
 │                   linksLayer.js · lineSheet.js · lineLookFields.js · richText.js · motionPanel.js ·
@@ -714,6 +718,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 3c Polish ✅ (added) | line look + text + editor (R31), styled descriptions (R32), Motion tab + idle-stopping loop (R33), settings side pane, hover affordances | owner checks on phone |
 | 3d Bouncing + release ✅ (added) | R34 formations (Ring, Rows, Pyramid; Bouncing button; royalty pick; Ctrl/Shift+click minis; "+ lines" for Ring) and R35 (Release child(s); Dissolve parent / family) | layout unit tests; owner checks on phone |
 | 4 Pictures and cards ✅ | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
+| 5b Shapes + free text ✅ (added) | R37 shapes (6, resize handles, lines, Bouncing), R38 free text (in-place rich text), + menu | unit tests; owner checks on phone |
 | 5 Tags ✅ | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
 | 7 Export / import | file export/import, PNG picture, Android share | round-trip test passes |

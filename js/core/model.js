@@ -1,6 +1,7 @@
 // The data rules. Pure functions only: no screen, no storage.
 import { uuid } from './ids.js';
 import { PALETTE, isHex } from '../services/color.js';
+import { isShape, clampSize, SHAPES } from '../services/shapes.js';
 
 export const SCHEMA = 1;
 export const LIMITS = { name: 100, title: 200, notes: 5000, notesHtml: 20000, label: 80, tag: 40, tagsPerItem: 30 };
@@ -20,13 +21,20 @@ export function newCanvas(name, now = Date.now()) {
 
 // notesHtml: the description with styling (sanitized subset, ui/richText.js);
 // notes: the same as plain text.
-const EDITABLE = ['title', 'notes', 'notesHtml', 'color', 'done', 'thumbId', 'tagIds'];
+// R37/R38: kind 'shape' adds shape + w/h (resizable); kind 'text' is free
+// text on the canvas (notesHtml/notes = its content, color = text colour).
+const EDITABLE = ['title', 'notes', 'notesHtml', 'color', 'done', 'thumbId', 'tagIds', 'shape', 'w', 'h'];
+export const KINDS = ['blob', 'shape', 'text'];
+export const TEXT_INK = '#2b2a28';
+export const TEXT_MAX_W = 320;
 
 export function newItem(canvas, fields = {}, now = Date.now()) {
-  const parentId = fields.parentId || null;
+  const kind = KINDS.includes(fields.kind) ? fields.kind : 'blob';
+  const parentId = kind === 'blob' ? fields.parentId || null : null; // shapes / text never go inside
   const siblings = childrenOf(canvas, parentId);
   const item = {
     id: 'i-' + uuid(),
+    kind,
     parentId,
     title: '',
     notes: '',
@@ -44,6 +52,13 @@ export function newItem(canvas, fields = {}, now = Date.now()) {
     updatedAt: now
   };
   for (const k of EDITABLE) if (k in fields) item[k] = fields[k];
+  if (kind === 'shape') {
+    item.shape = isShape(item.shape) ? item.shape : 'circle';
+    const def = SHAPES[item.shape].size;
+    item.w = clampSize(item.w || def.w);
+    item.h = clampSize(item.h || def.h);
+  }
+  if (kind === 'text' && !('color' in fields)) item.color = TEXT_INK;
   if ('x' in fields) item.x = fields.x;
   if ('y' in fields) item.y = fields.y;
   return item;
@@ -58,6 +73,9 @@ export function applyItemPatch(item, patch) {
     if (k === 'title') v = String(v).slice(0, LIMITS.title);
     if (k === 'notes') v = String(v).slice(0, LIMITS.notes);
     if (k === 'notesHtml') v = String(v).slice(0, LIMITS.notesHtml);
+    if (k === 'shape' && !isShape(v)) continue;
+    if ((k === 'w' || k === 'h') && !(typeof v === 'number' && isFinite(v))) continue;
+    if (k === 'w' || k === 'h') v = clampSize(v);
     if (k === 'tagIds') v = Array.isArray(v) ? [...new Set(v.filter(t => typeof t === 'string' && t))].slice(0, LIMITS.tagsPerItem) : [];
     if (k === 'color' && !isHex(v)) continue;
     if (k === 'done') v = !!v;
@@ -121,6 +139,8 @@ export function canMoveInto(canvas, id, targetId) {
   if (!canvas.items[id]) return false;
   if (targetId === null) return true;
   if (!canvas.items[targetId] || targetId === id) return false;
+  // Shapes and text never go inside anything, and nothing goes inside them.
+  if (kindOf(canvas.items[id]) !== 'blob' || kindOf(canvas.items[targetId]) !== 'blob') return false;
   return !ancestorsOf(canvas, targetId).includes(id);
 }
 
@@ -181,6 +201,7 @@ export function linkProblem(canvas, a, b) {
   const A = canvas.items[a], B = canvas.items[b];
   if (!A || !B) return 'missing';
   if (a === b) return 'self';
+  if (kindOf(A) === 'text' || kindOf(B) === 'text') return 'text'; // free text has no lines (R38)
   if (A.parentId !== B.parentId) return 'level';
   if (linkBetween(canvas, a, b)) return 'exists';
   return '';
@@ -226,7 +247,13 @@ export function sanitizeCanvas(doc) {
   for (const [key, it] of Object.entries(doc.items)) {
     if (!it || typeof it !== 'object') { delete doc.items[key]; fixes.push('bad item ' + key); continue; }
     it.id = key;
-    it.parentId = typeof it.parentId === 'string' && it.parentId ? it.parentId : null;
+    it.kind = KINDS.includes(it.kind) ? it.kind : 'blob';
+    it.parentId = typeof it.parentId === 'string' && it.parentId && it.kind === 'blob' ? it.parentId : null;
+    if (it.kind === 'shape') {
+      it.shape = isShape(it.shape) ? it.shape : 'circle';
+      it.w = clampSize(num(it.w, SHAPES[it.shape].size.w));
+      it.h = clampSize(num(it.h, SHAPES[it.shape].size.h));
+    }
     it.title = str(it.title, LIMITS.title);
     it.notes = str(it.notes, LIMITS.notes);
     it.notesHtml = str(it.notesHtml, LIMITS.notesHtml);
@@ -245,7 +272,7 @@ export function sanitizeCanvas(doc) {
 
   // Missing parent -> rescue to top level
   for (const it of Object.values(doc.items)) {
-    if (it.parentId && (!doc.items[it.parentId] || it.parentId === it.id)) {
+    if (it.parentId && (!doc.items[it.parentId] || it.parentId === it.id || doc.items[it.parentId].kind !== 'blob')) {
       it.parentId = null;
       fixes.push('rescued ' + it.id);
     }
@@ -380,4 +407,9 @@ export function filterHits(canvas, filter) {
     const has = new Set(it.tagIds || []);
     return filter.all ? want.every(t => has.has(t)) : want.some(t => has.has(t));
   }).map(it => it.id);
+}
+
+// 'blob' | 'shape' | 'text' (items saved before R37 have no kind = blob).
+export function kindOf(item) {
+  return item && KINDS.includes(item.kind) ? item.kind : 'blob';
 }

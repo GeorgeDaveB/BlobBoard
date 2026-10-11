@@ -154,7 +154,8 @@ export function createFormationUI({ root, store, board, openLayer, closeLayer })
       if (!answer) return;
       if (answer === 'move') minis = inside;
     }
-    const members = sel.filter(id => store.item(id) && (store.item(id).parentId === null || minis.includes(id)));
+    // Free text never takes part (R38).
+    const members = sel.filter(id => store.item(id) && store.item(id).kind !== 'text' && (store.item(id).parentId === null || minis.includes(id)));
     const ctx = { f, members, minis, royaltyId: null };
     if (f.royalty) pickRoyalty(ctx);
     else rowsPanel(ctx);

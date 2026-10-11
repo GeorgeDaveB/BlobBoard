@@ -7,6 +7,7 @@ import { initDialogs, toast, choiceDialog } from './dialogs.js';
 import { createFormationUI, MIN_SELECTED } from './formationPanel.js';
 import { ringLayout } from '../services/formations.js';
 import { createFilterMenu } from './tagPicker.js';
+import { SHAPES, SHAPE_IDS, shapePath } from '../services/shapes.js';
 import { createSettingsSheet } from './settingsSheet.js';
 import { createLineSheet } from './lineSheet.js';
 import { setMotion } from './physics.js';
@@ -270,13 +271,16 @@ export function mountApp({ root, store, repo, pictures = null }) {
   }
 
   // ---- items ----------------------------------------------------------------
-  function createAt(x, y) {
+  // fields: { kind: 'shape', shape } (R37) or { kind: 'text' } (R38); a
+  // new text is typed straight on the canvas.
+  function createAt(x, y, fields = {}) {
     const spot = board.freeSpot(x, y);
     const key = newSessionKey();
-    const id = store.createItem({ x: spot.x, y: spot.y }, { coalesce: key });
+    const id = store.createItem({ ...fields, x: spot.x, y: spot.y }, { coalesce: key });
     board.spawn(id);
     store.select(id);
-    openEditor(id, { key, isNew: true });
+    if (fields.kind === 'text') board.startTextEdit(id, key);
+    else openEditor(id, { key, isNew: true });
   }
 
   // "+" tile in an expanded item's tray: a new item inside it.
@@ -435,7 +439,45 @@ export function mountApp({ root, store, repo, pictures = null }) {
     if (store.selectedItems().length < MIN_SELECTED) { formations.closeMenu(); toast('Select multiple items first'); return; }
     formations.openMenu(btnBounce);
   });
-  fab.addEventListener('click', () => { const s = board.centerSpot(); createAt(s.x, s.y); });
+  // + : Blob / Text / one of the shapes (R37, R38).
+  const addMenu = document.createElement('div');
+  addMenu.className = 'add-menu';
+  addMenu.hidden = true;
+  const addBtn = (label, fields, svg) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'add-item';
+    b.title = label;
+    b.setAttribute('aria-label', 'New ' + label.toLowerCase());
+    b.innerHTML = svg;
+    const s = document.createElement('span');
+    s.textContent = label;
+    b.append(s);
+    b.addEventListener('click', () => { closeAdd(); const p = board.centerSpot(); createAt(p.x, p.y, fields); });
+    return b;
+  };
+  const kinds = document.createElement('div');
+  kinds.className = 'add-row';
+  kinds.append(
+    addBtn('Blob', {}, '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="fill" d="M12 3c5 0 9 3.5 9 8.5S17 21 12 21 3 16.5 3 11.5 7 3 12 3Z"/></svg>'),
+    addBtn('Text', { kind: 'text' }, '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>')
+  );
+  const shapesRow = document.createElement('div');
+  shapesRow.className = 'add-row';
+  for (const id of SHAPE_IDS) shapesRow.append(addBtn(SHAPES[id].label, { kind: 'shape', shape: id }, '<svg viewBox="-6 -6 112 112" aria-hidden="true"><path class="fill" d="' + shapePath(id) + '"/></svg>'));
+  const shapesLabel = document.createElement('div');
+  shapesLabel.className = 'add-label';
+  shapesLabel.textContent = 'Shapes';
+  addMenu.append(kinds, shapesLabel, shapesRow);
+  root.append(addMenu);
+  function closeAdd() { addMenu.hidden = true; fab.classList.remove('open'); document.removeEventListener('pointerdown', outsideAdd, true); }
+  function outsideAdd(e) { if (!addMenu.contains(e.target) && !fab.contains(e.target)) closeAdd(); }
+  fab.addEventListener('click', () => {
+    if (!addMenu.hidden) { closeAdd(); return; }
+    addMenu.hidden = false;
+    fab.classList.add('open');
+    setTimeout(() => document.addEventListener('pointerdown', outsideAdd, true));
+  });
 
   // ---- keyboard -----------------------------------------------------------
   document.addEventListener('keydown', e => {
@@ -443,6 +485,7 @@ export function mountApp({ root, store, repo, pictures = null }) {
     if (e.key === 'Escape') {
       formations.closeMenu();
       filterMenu.close();
+      closeAdd();
       if (layers.length) closeTopLayer();
       else { store.select(null); store.selectLink(null); }
       return;

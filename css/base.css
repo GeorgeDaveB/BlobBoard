@@ -670,3 +670,35 @@ button.tag-chip { cursor: pointer; min-height: 30px; padding: 4px 12px; font-siz
 .filter-actions { display: flex; gap: 8px; }
 .filter-actions .btn { flex: 1 1 auto; }
 .btn:disabled { opacity: .45; cursor: default; }
+
+/* ---- + menu: Blob / Text / Shapes (R37, R38) ---- */
+.fab { transition: transform .15s ease; }
+.fab.open { transform: rotate(45deg); }
+.add-menu {
+  position: fixed;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: calc(max(20px, env(safe-area-inset-bottom)) + var(--foot-h) + 66px);
+  z-index: 16;
+  width: min(300px, calc(100vw - 32px));
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border-radius: 18px;
+  box-shadow: var(--shadow-2);
+}
+.add-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.add-label { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 4px 0; }
+.add-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 4px; border: 0; border-radius: 12px; background: none; color: var(--ink);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.add-item:hover, .add-item:focus-visible { background: rgba(0, 0, 0, .05); outline: none; }
+.add-item svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.add-item svg path.fill { fill: #ffb066; stroke: none; }
+.shape-pick .shape-btn { width: 44px; padding: 6px; display: inline-flex; align-items: center; justify-content: center; }
+.shape-btn svg { width: 24px; height: 24px; }
+.shape-btn svg path { fill: currentColor; opacity: .7; }
+.shape-btn.on svg path { opacity: 1; }

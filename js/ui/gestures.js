@@ -7,6 +7,7 @@
 //  idle ─down on empty─► emptyPress ─moved─► pan (Select mode: box) ;  up quickly ─► tap / double-tap
 //  idle ─down on ● dot─► link ─move─► linkMove ─up─► linkEnd (cancelled: linkCancel)
 //  idle ─down on a line─► linePress ─moved─► pan ;  up quickly ─► tapLine
+//  idle ─down on a shape's resize handle─► resize ─move─► resizeMove ─up─► resizeEnd (R37)
 //  second finger at any point ─► pinch (an item drag / new line is cancelled first)
 
 const MOVE_PX = 6;
@@ -37,6 +38,7 @@ export function attachGestures(surface, h) {
     lastType = e.pointerType;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const dot = e.target.closest('.item-link');
+    const handle = e.target.closest('.shape-handle');
     if (!dot && e.target.closest('.item-ctl, [data-no-gesture]')) return;
     // A tray's background belongs to no item: ignore it (minis inside are fine).
     const trayEl = e.target.closest('.tray');
@@ -52,6 +54,7 @@ export function attachGestures(surface, h) {
       if (mode === 'pan') h.panEnd();
       if (mode === 'link') h.linkCancel();
       if (mode === 'box') h.boxCancel();
+      if (mode === 'resize') h.resizeCancel();
       mode = 'pinch';
       pinch = pair();
       h.pinchStart();
@@ -63,7 +66,11 @@ export function attachGestures(surface, h) {
     last = { x: e.clientX, y: e.clientY };
     const itemEl = e.target.closest('.item');
     const hitLine = e.target.closest('.link-hit, .link-label');
-    if (dot && itemEl) {
+    if (handle && itemEl && h.resizeStart) {
+      itemId = itemEl.dataset.id;
+      mode = 'resize';
+      h.resizeStart(itemId, handle.dataset.dir, e.clientX, e.clientY);
+    } else if (dot && itemEl) {
       itemId = itemEl.dataset.id;
       mode = 'link';
       h.linkStart(itemId, e.clientX, e.clientY);
@@ -119,6 +126,10 @@ export function attachGestures(surface, h) {
       h.boxMove(p.x, p.y);
       return;
     }
+    if (mode === 'resize') {
+      h.resizeMove(p.x, p.y);
+      return;
+    }
     if (mode === 'emptyPress' && moved && h.selectMode && h.selectMode()) {
       mode = 'box';
       h.boxStart(start.x, start.y, e.ctrlKey || e.metaKey || e.shiftKey);
@@ -153,6 +164,7 @@ export function attachGestures(surface, h) {
 
     if (mode === 'pressing' && !cancelled) h.tapItem(itemId, { add: e.ctrlKey || e.metaKey || e.shiftKey });
     else if (mode === 'box') cancelled ? h.boxCancel() : h.boxEnd();
+    else if (mode === 'resize') cancelled ? h.resizeCancel() : h.resizeEnd();
     else if (mode === 'holding') h.holdEnd(itemId, !cancelled);
     else if (mode === 'drag') cancelled ? h.dragCancel(itemId) : h.dragEnd(itemId, e.clientX, e.clientY);
     else if (mode === 'pan') h.panEnd();

@@ -3,7 +3,8 @@
 // drawing lines, auto-pan.
 import { screenToWorld, worldToScreen, zoomAt, fitView, boundsOf, itemRect } from '../services/geometry.js';
 import { findFreeSpot, spotInside, NEW_ITEM_SIZE, ellipseOf, ellipseContact, resolveOverlaps, ellipseTouchesRect, clearFormation } from '../services/layout.js';
-import { childrenOf, descendantsOf, linkProblem, filterMatches } from '../core/model.js';
+import { childrenOf, descendantsOf, linkProblem, filterMatches, kindOf } from '../core/model.js';
+import { SHAPES, clampSize } from '../services/shapes.js';
 import { createItemEl, updateItemEl, positionEl } from './itemView.js';
 import { renderTray, disposeTray, syncInline, removeInline } from './tray.js';
 import { attachGestures } from './gestures.js';
@@ -42,6 +43,8 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
   let selectMode = false;   // C13: empty-space drag draws a selection box
   let box = null;           // selection box in progress: { x0, y0, x1, y1, add, base, hits }
   let picking = null;       // R34 royalty pick in progress: { resolve }
+  let resizing = null;      // R37 shape resize in progress
+  let resizeSeq = 0;
   const boxEl = document.createElement('div');
   boxEl.className = 'select-box';
   boxEl.hidden = true;
@@ -136,7 +139,8 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     const y = dragged ? drag.y : member ? drag.y + member.dy : item.y;
     const s = sizeOf(id);
     const v = el._phys.visual();
-    return { cx: x + v.tx, cy: y + s.h / 2 + v.ty, a: (s.w / 2) * v.kx, b: (s.h / 2) * v.ky, rd: v.rd };
+    const sh = item.kind === 'shape' && SHAPES[item.shape];
+    return { cx: x + v.tx, cy: y + s.h / 2 + v.ty, a: (s.w / 2) * v.kx, b: (s.h / 2) * v.ky, rd: v.rd, poly: (sh && sh.poly) || null };
   }
 
   const links = createLinksLayer({
@@ -190,6 +194,12 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
       if (!el) {
         el = createItemEl(item, { onEdit, onNotes });
         els.set(item.id, el);
+        // R38: free text left empty after editing is removed (same undo step).
+        el._onTextEnd = (empty, key) => {
+          const id = el.dataset.id;
+          if (empty && store.item(id)) store.deleteItem(id, { coalesce: key });
+          else render();
+        };
         itemsLayer.append(el);
         ro.observe(el._parts.body);
         io.observe(el);
@@ -287,6 +297,7 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
   }
 
   const LINK_PROBLEMS = {
+    text: 'Text can’t have lines',
     level: 'Lines only connect blobs on the same board',
     exists: 'These two are already connected'
   };
@@ -366,6 +377,9 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     const hit = hitTest(drag.px, drag.py);
     drag.hit = hit;
     let target = hit.kind === 'item' && !drag.banned.has(hit.id) ? hit.id : null;
+    // Shapes and free text never go inside, and nothing goes inside them (R37/R38).
+    const nests = kindOf(store.item(drag.id)) === 'blob';
+    if (!nests || (target && kindOf(store.item(target)) !== 'blob')) target = null;
 
     // Reordering: a mini dragged within its own grid. Over the middle of a
     // sibling it can still be put inside that sibling (hold); anywhere else
@@ -379,7 +393,7 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     let pane = null;
     const paneGrid = hit.kind === 'tray' ? hit.el
       : hit.kind === 'item' && hit.el.parentElement && hit.el.parentElement.classList.contains('tray') ? hit.el.parentElement : null;
-    if (paneGrid && paneGrid !== grid) {
+    if (paneGrid && paneGrid !== grid && nests) {
       const owner = paneGrid.dataset.owner;
       const sibOfPane = hit.kind === 'item' ? hit.el : null;
       if (owner && !drag.banned.has(owner) && !(sibOfPane && inCentre(sibOfPane, drag.px, drag.py))) {
@@ -758,10 +772,57 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
       if (mods.add && allEls.has(id)) { store.toggleSelected(id); return; }
       const el = elFor(id);
       if (el) el._phys.poke(0.06);
-      if (store.ui.selectedId === id) store.toggleExpand(id);
+      // Shapes: tapping the selected one opens its editor; text: types in place.
+      const kind = kindOf(store.item(id));
+      if (store.ui.selectedId === id && kind === 'text') startTextEdit(id);
+      else if (store.ui.selectedId === id && kind === 'shape') onEdit(id);
+      else if (store.ui.selectedId === id) store.toggleExpand(id);
       else store.select(id);
     },
     contextItem: id => { store.select(id); onEdit(id); },
+    // R37: drag a selected shape's handle — right edge, bottom edge, corner.
+    // The left and top edges stay put; one undo step (+ blobs pushed aside).
+    resizeStart: (id, dir, sx, sy) => {
+      const it = store.item(id), el = els.get(id);
+      if (!it || !el || it.kind !== 'shape') return;
+      resizing = { id, dir, sx, sy, w0: it.w, h0: it.h, x0: it.x, y: it.y, w: it.w, h: it.h, el };
+      el.classList.add('resizing');
+      store.select(id);
+    },
+    resizeMove: (sx, sy) => {
+      const r = resizing;
+      if (!r) return;
+      const dx = (sx - r.sx) / view.z, dy = (sy - r.sy) / view.z;
+      r.w = r.dir === 's' ? r.w0 : clampSize(r.w0 + dx);
+      r.h = r.dir === 'e' ? r.h0 : clampSize(r.h0 + dy);
+      r.el._parts.body.style.width = r.w + 'px';
+      r.el._parts.body.style.height = r.h + 'px';
+      positionEl(r.el, r.x0 + (r.w - r.w0) / 2, r.y);
+      kick();
+    },
+    resizeEnd: () => {
+      const r = resizing;
+      resizing = null;
+      if (!r) return;
+      r.el.classList.remove('resizing');
+      if (r.w === r.w0 && r.h === r.h0) return;
+      const key = 'resize:' + (++resizeSeq);
+      const x = Math.round(r.x0 + (r.w - r.w0) / 2);
+      store.updateItem(r.id, { w: r.w, h: r.h }, { coalesce: key });
+      const pushes = pushesFor(r.id, x, r.y, { w: r.w, h: r.h });
+      const from = new Map(pushes.map(m => [m.id, { x: store.item(m.id).x, y: store.item(m.id).y }]));
+      store.moveItems([{ id: r.id, x, y: r.y }, ...pushes], { coalesce: key });
+      glide(pushes, from);
+      kick();
+    },
+    resizeCancel: () => {
+      const r = resizing;
+      resizing = null;
+      if (!r) return;
+      r.el.classList.remove('resizing');
+      r.el._sig = null; // redraw at the saved size
+      render();
+    },
     holdStart: id => {
       const el = elFor(id);
       if (el) { el.classList.add('holding'); el._phys.poke(-0.08); }
@@ -945,10 +1006,19 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
   }
   function finishPick(id) {
     if (!picking) return;
+    if (id && kindOf(store.item(id)) === 'text') { toast('Text can’t be the royalty — tap a blob or shape'); return; }
     const p = picking;
     picking = null;
     boardEl.classList.remove('picking');
     p.resolve(id);
+  }
+
+  // R38: type into a free text in place (a new one joins its creation step).
+  function startTextEdit(id, key) {
+    const el = els.get(id);
+    if (!el || !el._startTextEdit) return;
+    store.select(id);
+    el._startTextEdit({ key });
   }
 
   // Birth animation for an item the user just created: grows from a dot.
@@ -963,6 +1033,7 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     spawn,
     nodeOf,
     arrange,
+    startTextEdit,
     positions,
     glideFrom: glideFromMap,
     pickBlob,

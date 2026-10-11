@@ -1,7 +1,8 @@
 // The item editor: bottom sheet on phones, side panel on PC.
 // Changes apply live; one editor session = one undo step.
 import { createColorPicker } from './colorPicker.js';
-import { LIMITS, childrenOf } from '../core/model.js';
+import { LIMITS, childrenOf, kindOf } from '../core/model.js';
+import { SHAPES, SHAPE_IDS, shapePath } from '../services/shapes.js';
 import { createRichEditor, notesHtmlOf } from './richText.js';
 import { openPicturePicker } from './imageLibrary.js';
 import { createTagField } from './tagPicker.js';
@@ -99,7 +100,25 @@ export function createEditSheet({ host, store, pictures, onRequestClose, onDelet
   del.className = 'btn btn-danger btn-wide';
   del.textContent = 'Delete item';
 
-  body.append(field('Title', title), field('Tags', tagField.el), field('Notes', rich.el), field('Colour', picker.el), field('Picture', picField), doneRow, release, del);
+  // R37: which shape (keeps its size).
+  const shapeRow = document.createElement('div');
+  shapeRow.className = 'seg shape-pick';
+  const shapeBtns = SHAPE_IDS.map(id => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seg-btn shape-btn';
+    b.title = SHAPES[id].label;
+    b.setAttribute('aria-label', SHAPES[id].label);
+    b.innerHTML = '<svg viewBox="-4 -4 108 108" aria-hidden="true"><path d="' + shapePath(id) + '"/></svg>';
+    b.addEventListener('click', () => update({ shape: id }));
+    b.dataset.shape = id;
+    shapeRow.append(b);
+    return b;
+  });
+
+  const fTitle = field('Title', title), fTags = field('Tags', tagField.el), fNotes = field('Notes', rich.el);
+  const fColour = field('Colour', picker.el), fPic = field('Picture', picField), fShape = field('Shape', shapeRow);
+  body.append(fTitle, fShape, fTags, fNotes, fColour, fPic, doneRow, release, del);
   sheet.append(head, body);
   host.append(sheet);
 
@@ -128,6 +147,16 @@ export function createEditSheet({ host, store, pictures, onRequestClose, onDelet
   function fill() {
     const it = store.item(itemId);
     if (!it) return;
+    // Blob: everything. Shape (R37): title, shape, colour. Text (R38): text, colour.
+    const kind = kindOf(it);
+    fTitle.hidden = kind === 'text';
+    fShape.hidden = kind !== 'shape';
+    fTags.hidden = fPic.hidden = doneRow.hidden = kind !== 'blob';
+    fNotes.hidden = kind === 'shape';
+    fNotes.querySelector('.field-label').textContent = kind === 'text' ? 'Text' : 'Notes';
+    fColour.querySelector('.field-label').textContent = kind === 'text' ? 'Text colour' : 'Colour';
+    del.textContent = kind === 'text' ? 'Delete text' : kind === 'shape' ? 'Delete shape' : 'Delete item';
+    for (const b of shapeBtns) b.classList.toggle('on', b.dataset.shape === it.shape);
     if (document.activeElement !== title) title.value = it.title;
     if (!rich.isFocused) rich.setHtml(notesHtmlOf(it));
     doneBox.checked = it.done;
@@ -165,7 +194,8 @@ export function createEditSheet({ host, store, pictures, onRequestClose, onDelet
       itemId = id;
       key = opts.key || newSessionKey();
       isNew = !!opts.isNew;
-      heading.textContent = isNew ? 'New item' : 'Edit item';
+      const k = kindOf(store.item(id));
+      heading.textContent = (isNew ? 'New ' : 'Edit ') + (k === 'shape' ? 'shape' : k === 'text' ? 'text' : 'item');
       picker.collapse();
       fill();
       sheet.classList.add('open');

@@ -16,6 +16,7 @@
 // halfway between the two EDGES (not the centres), so the curve can never
 // bend back into a big blob.
 
+import { polyEdgeDistance } from './shapes.js';
 export const STRAND = {
   endWidth: 16,       // max width where it leaves a blob
   midWidth: 8,        // max width in the middle (short strands)
@@ -36,6 +37,7 @@ export const STRAND = {
 // superellipse: exponent 2 = ellipse, higher = squarer (rounded rectangle).
 export function edgeDistance(s, ux, uy) {
   if (!(s.a > 0) || !(s.b > 0)) return 0;
+  if (s.poly) return polyEdgeDistance(s.poly, s.a, s.b, ux, uy); // shapes (R37)
   const p = 2 + (1 - Math.max(0, Math.min(1, s.rd == null ? 1 : s.rd))) * 6;
   const v = Math.pow(Math.abs(ux) / s.a, p) + Math.pow(Math.abs(uy) / s.b, p);
   return v > 0 ? Math.pow(v, -1 / p) : 0;

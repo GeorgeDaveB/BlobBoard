@@ -1,6 +1,6 @@
 # BlobBoard — Handover
 
-*Last updated: 2026-10-11 · version **2026-10-11d** (phase 5) · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
+*Last updated: 2026-10-12 · version **2026-10-12a** (shapes + text) · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
 
 BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas that you group, reorder, connect with lines and (later) tag. It is a PWA (installable web app) for Windows and Android, plain HTML/CSS/JS with **no build step and no dependencies**, hosted on GitHub Pages. Dropbox sync is planned (phase 8).
 
@@ -19,7 +19,7 @@ BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas tha
 
 1. Read §2 (status), §3 (how to work with the owner), §5 (how the code works) and §6 (gotchas) of this file.
 2. Run it: `python -m http.server 8000` inside the folder → http://localhost:8000/ (app) and /tests/ (tests). No install, no Node.
-3. The spec is DESIGN.md: requirements **R1–R36**, choices **C1–C14**. "As built" notes there mark where the code differs from the original plan.
+3. The spec is DESIGN.md: requirements **R1–R38**, choices **C1–C14**. "As built" notes there mark where the code differs from the original plan.
 4. Every change: code + tests (logic) + a dated line in §4 + DESIGN.md if a requirement changed (back DESIGN.md up first) + bump `js/version.js` + update §2 and the test count. Then push and check the live tests.
 5. Next job: **phase 6 (multiple canvases, DESIGN R3, R20, C12)** — ask the owner the §8 questions first (one batch, with recommended defaults).
 
@@ -30,7 +30,7 @@ BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas tha
 | File | What it's for | Keep it updated when… |
 |---|---|---|
 | `HANDOVER.md` (this) | status, decision log, how the code really works, gotchas, how to run/deploy/move | anything is built or decided |
-| `DESIGN.md` | the spec: requirements **R1–R36**, choices **C1–C14**, data model, modules, interaction spec, phases | a requirement or design choice changes |
+| `DESIGN.md` | the spec: requirements **R1–R38**, choices **C1–C14**, data model, modules, interaction spec, phases | a requirement or design choice changes |
 | `README.md` | run locally, deploy (short) | the run/deploy steps change |
 | `CLAUDE.md` | working rules for AI assistants in this folder (+ its own "Applied Learning" bullets) | the way of working changes |
 
@@ -50,12 +50,13 @@ BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas tha
 | 3d | Bouncing formations (Ring, Rows, Pyramid) + Release child(s) / Dissolve parent / Dissolve family (R34–R35) | ✅ 2026-10-11 — owner checking on phone |
 | 4 | Pictures & cards (picture library, card look, Show pictures switch, picture minis) + phone footer (R36) | ✅ 2026-10-11 — owner checking on phone |
 | 5 | Tags + filter (chips, editor tags field, ⚙ Tags manager, filter menu: any/all, select matching) | ✅ 2026-10-11 — owner checking on phone |
-| 6 | Multiple canvases, duplicate/move to canvas | ⏭ **next** — ask §8 questions first |
+| 5b | Shapes (R37) + free text (R38) + "+" menu | ✅ 2026-10-12 — owner checking on phone |
+| 6 | Multiple canvases, duplicate/move to canvas | ⏭ **next** — defaults agreed 2026-10-12 |
 | 7 | Export/import JSON + PNG | planned |
 | 8 | Dropbox sync (PKCE, 3-way merge) | planned — owner must create the Dropbox app (DESIGN §16) |
 | 9 | PWA polish (service worker, icons, install, offline) | planned |
 
-Tests: **133 passing** locally (2026-10-11).
+Tests: **139 passing** locally (2026-10-12).
 
 **Important limitations right now (tell anyone taking over):**
 - **Data lives only on each device** (IndexedDB per browser). PC and phone are NOT synced yet; there is no export yet. Clearing site data deletes the boards. Phases 7–8 fix this.
@@ -122,6 +123,7 @@ Tests: **133 passing** locally (2026-10-11).
 | 2026-10-11 | **Phase 4 built** with the owner's defaults: editor Picture row → picker modal; ⚙ Pictures tab; Show pictures switch in ⚙ → Canvas; card 180 px, picture 0.6–1.6, title pill, no idle wobble; minis = round picture; 640 px WebP 0.82; delete = hide until next start (undo-safe). **R36:** canvas name in a footer on phones | Owner: "proceed with defaults"; footer = owner request |
 | 2026-10-11 | **Phase 5 built** with the owner's defaults (R10/R11 "as built" in DESIGN): chips ≤ 3 + "+N", own palette colour per tag, editor Tags field (search ignores case/accents), ⚙ Tags tab (add/rename/recolour/delete + Undo), top-bar filter (any/all, select all matching, clear), fade 20 %, groups bright if anything inside matches, filter remembered per canvas on this device | Owner: "make 5" after the defaults were proposed |
 | 2026-10-11 | A card opened into a container (editing in container view) keeps its picture as a faded background (`.pic-open`, colour wash 68 %) and card corners, instead of turning into a plain container | Owner request |
+| 2026-10-12 | **R37 shapes + R38 free text** (owner): 6 shapes (star swapped for trapezoid), resize handles instead of S/M/L, shapes = title + colour + lines + Bouncing only, never nested; text = rich text in place, no lines/Bouncing, removed when left empty; "+" opens Blob / Text / Shapes. Owner then asked to work through phase 7 tonight (8–9 later) with a password-encrypted app save (.blobboard) + export | Owner Q&A 2026-10-12 |
 | 2026-10-11 | "Pyramid" shown as **Top down** (code id stays `pyramid`); one-line description of Bouncing at the top of its menu; ⚙ Settings on phones = **half the screen** (`.settings-sheet` max-height 50dvh; editors unchanged) | Owner request |
 
 ---
@@ -144,6 +146,7 @@ Tests: **133 passing** locally (2026-10-11).
 | `js/services/layout.js` | ellipse helpers, `ellipseContact`, `resolveOverlaps` (one or many fixed), `clearFormation` (R34), `ellipseTouchesRect`, `findFreeSpot`, `spotInside` |
 | `js/services/formations.js` | R34 layouts (pure): `FORMATIONS` registry, `ringLayout`, `rowsLayout` (+ `rowCounts`, `linkedOrder`), `pyramidLayout`, `gapSlots` |
 | `js/services/imageProcessor.js` | phase 4: file → upright, ≤ 640 px WebP + SHA-256 id (`p-…`); `fitSize`, `clampAspect`; friendly errors |
+| `js/services/shapes.js` | R37: `SHAPES` (outline polygon or roundness, default size), `shapePath` (SVG), `polyEdgeDistance` (lines end on the outline), `clampSize` |
 | `js/services/strand.js` | line geometry: edges, gooey/straight outline, arrowheads, thickness |
 | `js/ui/app.js` | shell: top bar (mode ✋/⬚, undo/redo, zoom, fit, ⚙), FAB, back stack, side panels (item editor, line editor, settings), selection bar, keyboard, motion load/save |
 | `js/ui/board.js` | world (pan/zoom), rendering of top-level items + trays, drag/drop (single + group), growth push, line drawing, selection box, `geom()` for lines |
@@ -166,6 +169,7 @@ Tests: **133 passing** locally (2026-10-11).
 ### Data
 - Canvas document: DESIGN §6. `settings` = `{ thumbnails, insideView, growth, lineStyle, lineColor, lineWidth }`. Item adds `notesHtml` (R32). Link = `{ from, to, arrowFrom, arrowTo, style, color, width, label }` (`null` look fields = canvas default).
 - Pictures (IndexedDB `images`, phase 4): `{ id, blob (WebP), w, h, bytes, createdAt, deleted? }`; items point at them with `thumbId`. Cards are drawn when `settings.thumbnails` is on and the picture is on this device (`board.picOf`, passed to `updateItemEl` and trays as `ctx.picOf`).
+- Item kinds (R37/R38): `kind` = 'blob' (default; old items have none) | 'shape' (+ `shape`, `w`, `h`) | 'text' (content in `notesHtml`/`notes`, `color` = text colour). `model.kindOf`, `canMoveInto` (non-blobs never nest), `linkProblem` ('text'). `itemView.updateShapeOrText` draws them; `board` handles taps (selected text → type in place, selected shape → editor), resize (`gestures` mode 'resize' on `.shape-handle`), and refuses nesting; `formationPanel` leaves text out.
 - Tags (IndexedDB `tags`, phase 5; shared by all canvases): `{ id ('t-…'), name, color, createdAt, updatedAt, deleted? }`, held in the store (`store.tags()`, `tag(id)`); items carry `tagIds`. Name matching = `model.foldText` (no case/accents, ς→σ). Filter = screen state `store.ui.filter = { tagIds, all }`; `model.filterMatches` gives the bright set (matches + their ancestors), `board` fades the rest (`.item.faded`, lines via `linksLayer({ faded })`).
 - Device settings (IndexedDB `settings`, never synced): `lastCanvasId`, `view:<canvasId>:root`, `mode` ('pan'|'select'), `motion` (R33 switches), `filter:<canvasId>` (tag filter).
 - Store actions: `select`, `selectLink`, `selectMany`, `toggleSelected`, `selectedItems`, `setExpanded`, `expandTo`, `toggleExpand`, `setCanvasSetting(key, value, {coalesce})`, `reorderItem`, `createItem`, `updateItem`, `moveItem`, `moveItems`, `reparentItem`, `reparentItems`, `deleteItem`, `deleteItems`, `pictureUses`, `clearPicture(id, {coalesce})`, `ensureTag(name)`, `updateTag(id, {name, color})` → '' | 'exists' | 'empty', `tagUses`, `deleteTag(id, {coalesce})`, `restoreTag`, `setFilter({tagIds, all})`, `releaseChildren`, `dissolveItems`, `applyFormation(moves, links)`, `undoStep(key)`, `createLink`, `toggleArrow`, `updateLink`, `resetLineLooks`, `deleteLink`, `undo`, `redo` (+ getters `canvas`, `item`, `link`, `canUndo`, `canRedo`).
@@ -247,7 +251,7 @@ cd C:\Users\G.Boulas\Claude\BlobBoard
 python -m http.server 8000
 ```
 - App: http://localhost:8000/ · Tests: http://localhost:8000/tests/ (must say **ALL PASSED**).
-- Tests: `smoke` (browser features) · `model` · `services` (colour, geometry, layout, growth, push-apart) · `store` · `physics` (stepped with `tick`) · `links` (link actions, look, strand geometry) · `select` (multi-select, box hit, group push) · `richtext` (sanitizer, plain text, motion switches) · `pictures` (sizes, processing + fingerprint, library add/hide/restore/purge, clearPicture, card view, card has no wobble) · `tags` (folding, search, ensure/rename/delete/restore, tagIds cleaning, filter any/all + groups, chips) · `formations` (ring order/gaps, rows, pyramid tree, clear-out, release/dissolve/applyFormation/undoStep, mini selection). UI flows were checked by dispatching `PointerEvent`s in the browser.
+- Tests: `smoke` (browser features) · `model` · `services` (colour, geometry, layout, growth, push-apart) · `store` · `physics` (stepped with `tick`) · `links` (link actions, look, strand geometry) · `select` (multi-select, box hit, group push) · `richtext` (sanitizer, plain text, motion switches) · `pictures` (sizes, processing + fingerprint, library add/hide/restore/purge, clearPicture, card view, card has no wobble) · `tags` (folding, search, ensure/rename/delete/restore, tagIds cleaning, filter any/all + groups, chips) · `shapes` (outlines, polygon edges, kinds, nesting/line rules, sanitize, view) · `formations` (ring order/gaps, rows, pyramid tree, clear-out, release/dissolve/applyFormation/undoStep, mini selection). UI flows were checked by dispatching `PointerEvent`s in the browser.
 - Owner's phone checklist after UI changes: drag/drop, hold-to-put-inside, draw a line from ↗, tap a thin line, selection box with a finger, the rich-text toolbar, Motion tab presets, Bouncing (Ring with "+ lines", Rows preview, Pyramid), Release child(s), Dissolve parent / family.
 - Deploy: bump `APP_VERSION` in `js/version.js` (date + letter), commit, `git push origin main`, wait until the live `js/version.js` shows it, then open the live `/tests/` (reload changed files with `cache:'reload'`) → ALL PASSED.
 - Roll back: `git revert <commit>` + push. Tag before risky work (`git tag -a name -m … && git push origin name`).
@@ -256,7 +260,7 @@ python -m http.server 8000
 
 ## 8. Open questions / next steps
 
-- **Owner to check on the phone:** lines (drawing, tapping, editor), multi-select box, rich-text toolbar, Motion → Light feel and speed, Bouncing (all three) + Release / Dissolve, pictures (add from gallery + camera, cards, Show pictures switch, footer), tags (typing on the phone keyboard, chips, filter menu, ⚙ Tags).
+- **Owner to check on the phone:** lines (drawing, tapping, editor), multi-select box, rich-text toolbar, Motion → Light feel and speed, Bouncing (all three) + Release / Dissolve, pictures (add from gallery + camera, cards, Show pictures switch, footer), tags (typing on the phone keyboard, chips, filter menu, ⚙ Tags), shapes (+ menu, resize handles with a finger), free text (typing in place).
 - **R34 later:** more royalty formations reusing `pickBlob` + `ringLayout`; "+ lines" for Pyramid; adding minis to a selection on a phone.
 - **Phase 6 (canvases) — ask before building** (DESIGN R3, R20, C12, §8.5 canvasMenu): where the switcher lives now that the phone shows the canvas name in the footer (tap the footer name / top-bar name?); New / Rename / Duplicate / Delete (confirm, undo?); "Duplicate to canvas…" and "Move to canvas…" for items (editor? selection bar?), with C12 placement; whether lines between duplicated items come along; per-canvas settings copied on Duplicate; delete of the last canvas.
 - **Not built (possible later):** auto-pan while drawing a line near the screen edge; lines between inside items; add/remove single blobs to a selection on a phone; "connect all selected"; rich text in line labels.

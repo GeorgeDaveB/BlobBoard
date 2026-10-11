@@ -15,7 +15,8 @@
 // fight each other.
 import { textColorFor } from '../services/color.js';
 import { seededRandom } from '../core/ids.js';
-import { badgeText, LIMITS } from '../core/model.js';
+import { badgeText, LIMITS, kindOf, TEXT_MAX_W } from '../core/model.js';
+import { SHAPES, shapePath } from '../services/shapes.js';
 import { createRichEditor, notesHtmlOf } from './richText.js';
 import { createPhysics } from './physics.js';
 
@@ -129,7 +130,78 @@ export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   pic.append(img);
   body.prepend(pic);
   el._parts = { body, title, tagRow, notes, kids, shapes, badge, desc, descText, descInput, descShow, pic, img };
-  el._editingDesc = () => !descInput.hidden;
+  el._editingDesc = () => !descInput.hidden || !!el._textEditing;
+
+  // R37 shapes: an SVG outline stretched to the shape's size (behind the
+  // title) + resize handles (right edge, bottom edge, corner).
+  const kind = kindOf(item);
+  el.classList.add('kind-' + kind);
+  if (kind === 'shape') {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'shape-bg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.append(path);
+    body.prepend(svg);
+    el._parts.shapePath = path;
+    for (const dir of ['e', 's', 'se']) {
+      const hd = document.createElement('span');
+      hd.className = 'shape-handle h-' + dir;
+      hd.dataset.dir = dir;
+      hd.setAttribute('aria-hidden', 'true');
+      el.append(hd);
+    }
+  }
+  // R38 free text: formatted text shown in place; editing in place uses the
+  // same toolbar as descriptions (startTextEdit).
+  if (kind === 'text') {
+    const txt = document.createElement('div');
+    txt.className = 'text-content rich-text';
+    const txtEdit = document.createElement('div');
+    txtEdit.className = 'text-edit';
+    txtEdit.dataset.noGesture = '';
+    txtEdit.hidden = true;
+    body.append(txt, txtEdit);
+    el._parts.text = txt;
+    el._parts.textEdit = txtEdit;
+    let rich = null;
+    let key = null;
+    // opts.key joins the creation step (a new text); onEnd(empty) afterwards.
+    el._startTextEdit = (opts = {}) => {
+      key = opts.key || 'text:' + (++inlineSeq);
+      if (!rich) {
+        rich = createRichEditor({
+          compact: true,
+          placeholder: 'Text',
+          onInput: (html, plain) => { if (onNotes) onNotes(el.dataset.id, { notesHtml: html, notes: plain.slice(0, LIMITS.notes) }, key); }
+        });
+        txtEdit.append(rich.el);
+        txtEdit.addEventListener('focusout', ev => {
+          if (ev.relatedTarget && txtEdit.contains(ev.relatedTarget)) return;
+          setTimeout(() => {
+            if (txtEdit.contains(document.activeElement) || !el._textEditing) return;
+            el._textEditing = false;
+            el._sig = null; // show the new text on the next update
+            txtEdit.hidden = true;
+            txt.hidden = false;
+            el.classList.remove('text-editing');
+            if (el._onTextEnd) el._onTextEnd(!(el._notes || '').trim(), key);
+          }, 0);
+        });
+        txtEdit.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.stopPropagation(); rich.box.blur(); } });
+      }
+      el._textEditing = true;
+      el.classList.add('text-editing');
+      rich.setHtml(el._notesHtml || '');
+      txt.hidden = true;
+      txtEdit.hidden = false;
+      rich.focus();
+    };
+  }
   el._phys = createPhysics(jellyLayer, body, item.seed);
   return el;
 }
@@ -179,6 +251,8 @@ export function updateItemEl(el, item, ctx) {
   const picOf = ctx.picOf || (() => null);
   el._notes = item.notes;
   el._notesHtml = item.notes || item.notesHtml ? notesHtmlOf(item) : '';
+  const kind = kindOf(item);
+  if (kind !== 'blob') { updateShapeOrText(el, item, ctx, kind); return; }
   const container = !!(ctx.expanded && ctx.container);
   if (el.classList.contains('container-open') !== container) {
     el.classList.toggle('container-open', container);
@@ -294,6 +368,46 @@ export function updateItemEl(el, item, ctx) {
   // when fully expanded (whole description shown). Morphs with a spring.
   el._phys.setRoundness(card || picOpen ? 0.2 : container ? 0.16 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
 }
+
+// R37 shapes and R38 free text: title (shapes) or formatted text (text),
+// colour, size; no notes preview, tags, pictures, inside items or wobble.
+function updateShapeOrText(el, item, ctx, kind) {
+  const p = el._parts;
+  const sig = JSON.stringify([kind, item.title, item.notesHtml, item.notes, item.color, item.shape, item.w, item.h]);
+  if (el._sig !== sig) {
+    p.body.style.setProperty('--c', item.color);
+    p.body.style.setProperty('--tc', textColorFor(item.color));
+    el.style.setProperty('--lc', item.color);
+    if (kind === 'shape') {
+      p.title.textContent = item.title || 'Untitled';
+      p.title.classList.toggle('untitled', !item.title);
+      p.shapePath.setAttribute('d', shapePath(item.shape));
+      p.body.style.width = item.w + 'px';
+      p.body.style.height = item.h + 'px';
+      for (const s of SHAPE_IDS_CLASSES) el.classList.toggle(s, s === 'shape-' + item.shape);
+      el.setAttribute('aria-label', (item.title || 'Untitled') + ', ' + (SHAPES[item.shape] ? SHAPES[item.shape].label : 'shape'));
+    } else {
+      p.title.hidden = true;
+      if (!el._textEditing) {
+        p.text.innerHTML = el._notesHtml; // sanitized (richText.js)
+        p.text.classList.toggle('empty', !el._notesHtml);
+        if (!el._notesHtml) p.text.textContent = 'Text';
+      }
+      p.body.style.maxWidth = TEXT_MAX_W + 'px';
+      el.setAttribute('aria-label', 'Text: ' + (item.notes || 'empty').slice(0, 60));
+    }
+    el._sig = sig;
+  }
+  p.notes.hidden = true;
+  p.kids.hidden = true;
+  p.tagRow.hidden = true;
+  p.pic.hidden = true;
+  el.classList.toggle('selected', !!ctx.selected);
+  el.classList.toggle('faded', !!ctx.faded);
+  el._phys.setCard(true); // no idle wobble
+  el._phys.setRoundness(kind === 'shape' && SHAPES[item.shape] && SHAPES[item.shape].rd != null ? SHAPES[item.shape].rd : 1);
+}
+const SHAPE_IDS_CLASSES = Object.keys(SHAPES).map(s => 'shape-' + s);
 
 export const MAX_GROW = 5;
 export const MAX_CHIPS = 3;
