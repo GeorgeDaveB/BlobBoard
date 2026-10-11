@@ -35,6 +35,13 @@ export async function openRepo({ dbName = DB_NAME } = {}) {
       schedule();
     },
 
+    // Phase 6: a deleted canvas (and its sync bookkeeping) goes for good.
+    async deleteCanvas(id) {
+      pendingCanvases.delete(id);
+      await db.del('canvases', id);
+      await db.del('syncMeta', id).catch(() => {});
+    },
+
     // Tags shared by every canvas (phase 5). Written straight away.
     loadTags() { return db.getAll('tags'); },
     saveTag(tag) { return db.put('tags', { ...tag }).catch(err => console.error('Tag save failed', err)); },

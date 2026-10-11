@@ -702,3 +702,38 @@ button.tag-chip { cursor: pointer; min-height: 30px; padding: 4px 12px; font-siz
 .shape-btn svg { width: 24px; height: 24px; }
 .shape-btn svg path { fill: currentColor; opacity: .7; }
 .shape-btn.on svg path { opacity: 1; }
+
+/* ---- canvases (phase 6): the name opens the canvas menu ---- */
+.canvas-name, .foot-name { border: 0; background: none; font: inherit; text-align: left; cursor: pointer; padding: 6px 8px; margin-left: -8px; border-radius: 10px; color: inherit; }
+.canvas-name { font-weight: 650; font-size: 16px; }
+.canvas-name::after, .foot-name::after { content: ' \25BE'; color: var(--muted); font-size: .8em; }
+.canvas-name:hover, .foot-name:hover { background: rgba(0, 0, 0, .05); }
+.foot-name { font-weight: 650; font-size: 13px; color: var(--muted); padding: 4px 8px; max-width: 100%; }
+.canvas-menu {
+  position: fixed;
+  z-index: 40;
+  width: min(300px, calc(100vw - 16px));
+  max-height: min(70dvh, 560px);
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-2);
+}
+.canvas-list { display: flex; flex-direction: column; }
+.canvas-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: none; font: inherit; color: var(--ink); text-align: left; cursor: pointer; }
+.canvas-row span { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-row small { color: var(--muted); white-space: nowrap; }
+.canvas-row:hover { background: rgba(0, 0, 0, .05); }
+.canvas-row.on { background: rgba(0, 0, 0, .07); }
+.canvas-row.on span::before { content: '\2713  '; }
+.canvas-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
+.canvas-act { padding: 9px 10px; border: 0; border-radius: 10px; background: none; font: inherit; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer; }
+.canvas-act:hover { background: rgba(0, 0, 0, .05); }
+.canvas-act.danger { color: var(--danger); }
+.modal-input { width: 100%; min-height: 44px; padding: 0 12px; margin: 0 0 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; background: var(--surface); }
+.modal-input:focus { outline: none; border-color: var(--ink); }
+.modal-error { color: var(--danger); font-size: 13px; margin: -6px 0 12px; }

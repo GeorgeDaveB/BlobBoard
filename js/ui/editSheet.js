@@ -10,7 +10,7 @@ import { createTagField } from './tagPicker.js';
 let sessionSeq = 0;
 export const newSessionKey = () => 'edit:' + (++sessionSeq);
 
-export function createEditSheet({ host, store, pictures, onRequestClose, onDelete, onRelease }) {
+export function createEditSheet({ host, store, pictures, onRequestClose, onDelete, onRelease, onCopyMove }) {
   const sheet = document.createElement('section');
   sheet.className = 'sheet';
   sheet.setAttribute('role', 'dialog');
@@ -95,6 +95,13 @@ export function createEditSheet({ host, store, pictures, onRequestClose, onDelet
   release.title = 'Take the blobs inside out and place them around it';
   release.hidden = true;
 
+  // Phase 6 (R20): duplicate here or to another canvas, or move.
+  const copyMove = document.createElement('button');
+  copyMove.type = 'button';
+  copyMove.className = 'btn btn-wide';
+  copyMove.textContent = 'Duplicate / move to canvas…';
+  copyMove.addEventListener('click', () => { if (onCopyMove && itemId) onCopyMove(itemId); });
+
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'btn btn-danger btn-wide';
@@ -118,7 +125,7 @@ export function createEditSheet({ host, store, pictures, onRequestClose, onDelet
 
   const fTitle = field('Title', title), fTags = field('Tags', tagField.el), fNotes = field('Notes', rich.el);
   const fColour = field('Colour', picker.el), fPic = field('Picture', picField), fShape = field('Shape', shapeRow);
-  body.append(fTitle, fShape, fTags, fNotes, fColour, fPic, doneRow, release, del);
+  body.append(fTitle, fShape, fTags, fNotes, fColour, fPic, doneRow, release, copyMove, del);
   sheet.append(head, body);
   host.append(sheet);
 

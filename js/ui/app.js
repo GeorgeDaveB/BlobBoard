@@ -7,6 +7,7 @@ import { initDialogs, toast, choiceDialog } from './dialogs.js';
 import { createFormationUI, MIN_SELECTED } from './formationPanel.js';
 import { ringLayout } from '../services/formations.js';
 import { createFilterMenu } from './tagPicker.js';
+import { createCanvasMenu, copyOrMoveItems } from './canvasMenu.js';
 import { SHAPES, SHAPE_IDS, shapePath } from '../services/shapes.js';
 import { createSettingsSheet } from './settingsSheet.js';
 import { createLineSheet } from './lineSheet.js';
@@ -34,8 +35,11 @@ export function mountApp({ root, store, repo, pictures = null }) {
   // ---- layout -------------------------------------------------------------
   const top = document.createElement('header');
   top.className = 'topbar';
-  const name = document.createElement('div');
+  // The canvas name opens the canvas menu (phase 6).
+  const name = document.createElement('button');
+  name.type = 'button';
   name.className = 'canvas-name';
+  name.title = 'Canvases';
   const tools = document.createElement('div');
   tools.className = 'tools';
   const btnUndo = iconButton('undo', 'Undo (Ctrl+Z)');
@@ -76,7 +80,9 @@ export function mountApp({ root, store, repo, pictures = null }) {
   // bar keeps the tools.
   const foot = document.createElement('footer');
   foot.className = 'footbar';
-  const footName = document.createElement('div');
+  const footName = document.createElement('button');
+  footName.type = 'button';
+  footName.title = 'Canvases';
   footName.className = 'foot-name';
   foot.append(footName);
   root.append(top, main, foot, fab);
@@ -97,12 +103,17 @@ export function mountApp({ root, store, repo, pictures = null }) {
   selRelease.className = 'btn';
   selRelease.textContent = 'Release child(s)';
   selRelease.hidden = true;
+  const selCanvas = document.createElement('button');
+  selCanvas.type = 'button';
+  selCanvas.className = 'btn';
+  selCanvas.textContent = 'To canvas…';
+  selCanvas.title = 'Duplicate or move the selected items to a canvas';
   const selClear = document.createElement('button');
   selClear.type = 'button';
   selClear.className = 'icon-btn';
   selClear.setAttribute('aria-label', 'Clear selection');
   selClear.textContent = '✕';
-  selBar.append(selCount, selRelease, selDelete, selClear);
+  selBar.append(selCount, selRelease, selCanvas, selDelete, selClear);
   root.append(selBar);
 
   // ---- back stack -----------------------------------------------------------
@@ -160,7 +171,8 @@ export function mountApp({ root, store, repo, pictures = null }) {
     pictures,
     onRequestClose: () => closeLayer(editorLayer),
     onDelete: id => deleteWithUndo(id),
-    onRelease: id => releaseWithUndo([id])
+    onRelease: id => releaseWithUndo([id]),
+    onCopyMove: id => copyOrMoveItems(store, [id], copied)
   });
 
   function viewKey() {
@@ -417,6 +429,7 @@ export function mountApp({ root, store, repo, pictures = null }) {
     syncTrayLayer();
     if ((change.type === 'data' || change.type === 'tags') && editor.isOpen && !editor.refresh()) closeLayer(editorLayer);
     if (change.type === 'ui' || change.type === 'tags') saveFilter();
+    if (change.type === 'canvas') onCanvasSwitched();
     if (lineSheet.isOpen && !lineSheet.refresh()) closeLayer(lineLayer);
     // Selecting something else (or nothing) while editing a line closes it.
     if (change.type === 'ui' && lineSheet.isOpen && store.ui.selectedLinkId !== lineSheet.linkId) closeLayer(lineLayer);
@@ -505,6 +518,43 @@ export function mountApp({ root, store, repo, pictures = null }) {
 
   // A picture added or deleted: redraw cards and the open editor.
   if (pictures) pictures.on(() => { board.render(); if (editor.isOpen) editor.refresh(); });
+
+  // ---- canvases (phase 6) -----------------------------------------------------------
+  const canvasMenu = createCanvasMenu({ root, store, extra: () => (canvasExtras ? canvasExtras() : []) });
+  let canvasExtras = null; // phase 7 adds save / open / export picture
+  name.addEventListener('click', () => canvasMenu.open(name));
+  footName.addEventListener('click', () => canvasMenu.open(footName));
+  selCanvas.addEventListener('click', () => copyOrMoveItems(store, store.ui.selectedIds, copied));
+
+  // After "Duplicate / move to canvas…" (R20, C12).
+  function copied(target, made, { move, key }) {
+    const here = target === store.ui.canvasId;
+    const tName = (store.canvasList().find(c => c.id === target) || {}).name || 'canvas';
+    if (here) {
+      // Next to the originals: others make room (same undo step).
+      const targets = new Map(made.map(id => board.nodeOf(id)).filter(Boolean).map(n => [n.id, { cx: n.cx, cy: n.cy }]));
+      board.arrange(targets, { coalesce: key });
+      store.selectMany(made);
+      toast('Duplicated', { actionLabel: 'Undo', onAction: () => store.undoStep(key) });
+      return;
+    }
+    if (move) {
+      const from = store.ui.canvasId;
+      toast('Moved to “' + tName + '”', { actionLabel: 'Undo', onAction: () => { store.undoStep(key, target); store.undoStep(key, from); } });
+    } else {
+      toast('Copied to “' + tName + '”', { actionLabel: 'Go there', onAction: () => store.switchCanvas(target) });
+    }
+  }
+
+  // Switching canvas: panels close, its own view and filter come back.
+  function onCanvasSwitched() {
+    while (layers.length) closeTopLayer();
+    formations.cancel();
+    repo.setSetting('lastCanvasId', store.ui.canvasId);
+    savedFilter = '';
+    showView();
+    repo.getSetting('filter:' + store.ui.canvasId).then(f => { if (f && Array.isArray(f.tagIds)) store.setFilter(f); }).catch(() => {});
+  }
 
   // ---- tag filter (R11): remembered per canvas on this device ------------------
   const filterMenu = createFilterMenu({ root, store });

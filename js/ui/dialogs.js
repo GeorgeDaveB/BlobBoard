@@ -91,6 +91,69 @@ export function choiceDialog({ title, message, choices }) {
   });
 }
 
+// One line of text (e.g. a canvas name). input: extra input attributes
+// ({ type: 'password', placeholder, maxLength }). Resolves the text, or
+// null when cancelled. check(text) may return an error message to show.
+export function promptDialog({ title, message = '', value = '', okLabel = 'OK', input: attrs = {}, check = null }) {
+  return new Promise(resolve => {
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    const box = document.createElement('form');
+    box.className = 'modal';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    const h = document.createElement('h2');
+    h.textContent = title;
+    box.append(h);
+    if (message) {
+      const p = document.createElement('p');
+      p.textContent = message;
+      box.append(p);
+    }
+    const input = document.createElement('input');
+    input.type = attrs.type || 'text';
+    input.className = 'modal-input';
+    input.value = value;
+    if (attrs.placeholder) input.placeholder = attrs.placeholder;
+    if (attrs.maxLength) input.maxLength = attrs.maxLength;
+    if (attrs.autocomplete) input.autocomplete = attrs.autocomplete;
+    const err = document.createElement('div');
+    err.className = 'modal-error';
+    err.hidden = true;
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn';
+    cancel.textContent = 'Cancel';
+    const ok = document.createElement('button');
+    ok.type = 'submit';
+    ok.className = 'btn btn-primary';
+    ok.textContent = okLabel;
+    actions.append(cancel, ok);
+    box.append(input, err, actions);
+    back.append(box);
+    document.body.append(back);
+    input.focus();
+    input.select();
+    const finish = v => {
+      document.removeEventListener('keydown', onKey, true);
+      back.remove();
+      resolve(v);
+    };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); finish(null); } };
+    document.addEventListener('keydown', onKey, true);
+    cancel.addEventListener('click', () => finish(null));
+    back.addEventListener('click', e => { if (e.target === back) finish(null); });
+    box.addEventListener('submit', e => {
+      e.preventDefault();
+      const why = check ? check(input.value) : '';
+      if (why) { err.textContent = why; err.hidden = false; input.focus(); return; }
+      finish(input.value);
+    });
+  });
+}
+
 export function confirmDialog({ title, message, okLabel = 'OK', danger = false }) {
   return new Promise(resolve => {
     const back = document.createElement('div');

@@ -1,9 +1,11 @@
 // The single source of truth in memory. Only these actions change data, so
 // every change is saved, (later) synced and undoable the same way.
-import { newTag, findTagByName, cleanTagName, isTagColor, newItem, newLink, linkProblem, applyItemPatch, applyLinkPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
+import { newCanvas, cloneItems, outermost, LIMITS, newTag, findTagByName, cleanTagName, isTagColor, newItem, newLink, linkProblem, applyItemPatch, applyLinkPatch, descendantsOf, ancestorsOf, childrenOf, canMoveInto, maxZ } from './model.js';
 import { createEmitter } from './events.js';
 
 export const UNDO_LIMIT = 50;
+
+const cleanCanvasName = n => String(n || '').replace(/\s+/g, ' ').trim().slice(0, LIMITS.name);
 
 export function createStore({ repo, now = () => Date.now() }) {
   const canvases = new Map();
@@ -422,6 +424,130 @@ export function createStore({ repo, now = () => Date.now() }) {
         ui.selectedIds = ui.selectedIds.filter(id => !gone.has(id));
       });
       return [...out].map(([spotId, list]) => ({ spotId, ids: list }));
+    },
+
+    // ---- canvases (R3, R20, C12; phase 6) --------------------------------
+    // [{ id, name, count }] oldest first.
+    canvasList() {
+      return [...canvases.values()]
+        .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
+        .map(d => ({ id: d.id, name: d.name, count: Object.keys(d.items).length }));
+    },
+
+    // Shows another canvas: fresh screen state; its own undo history stays.
+    switchCanvas(id) {
+      if (!canvases.has(id) || id === ui.canvasId) return false;
+      ui.canvasId = id;
+      ui.expanded = [];
+      ui.selectedId = null;
+      ui.selectedIds = [];
+      ui.selectedLinkId = null;
+      ui.filter = { tagIds: [], all: false };
+      events.emit({ type: 'canvas', canvasId: id });
+      return true;
+    },
+
+    createCanvas(name) {
+      const doc = newCanvas(cleanCanvasName(name) || 'New canvas', now());
+      canvases.set(doc.id, doc);
+      repo.saveCanvas(doc);
+      events.emit({ type: 'canvases' });
+      return doc.id;
+    },
+
+    // Undoable on that canvas.
+    renameCanvas(id, name) {
+      const n = cleanCanvasName(name);
+      if (!n || !canvases.has(id)) return false;
+      return commit(null, doc => { if (doc.name === n) return false; doc.name = n; }, id);
+    },
+
+    // A full copy (items, lines, settings) with new ids, named "… (copy)".
+    duplicateCanvas(id) {
+      const src = canvases.get(id);
+      if (!src) return null;
+      const t = now();
+      const doc = newCanvas(cleanCanvasName(src.name + ' (copy)'), t);
+      doc.settings = JSON.parse(JSON.stringify(src.settings));
+      const tops = Object.values(src.items).filter(it => it.parentId === null).map(it => it.id);
+      const { items, links } = cloneItems(src, tops, t);
+      for (const it of items) doc.items[it.id] = it;
+      for (const ln of links) doc.links[ln.id] = ln;
+      canvases.set(doc.id, doc);
+      repo.saveCanvas(doc);
+      events.emit({ type: 'canvases' });
+      return doc.id;
+    },
+
+    // Final (no undo). The last canvas can't be deleted. Switches away first.
+    deleteCanvas(id) {
+      if (!canvases.has(id) || canvases.size <= 1) return false;
+      if (ui.canvasId === id) store.switchCanvas(store.canvasList().find(c => c.id !== id).id);
+      canvases.delete(id);
+      history.delete(id);
+      if (repo.deleteCanvas) repo.deleteCanvas(id);
+      events.emit({ type: 'canvases' });
+      return true;
+    },
+
+    // R20 / C12: copies `ids` (with everything inside and the lines between
+    // them) into canvas `targetId`. Same canvas: next to the originals, same
+    // level. Another canvas: its top level, to the right of what's there.
+    // opts.move: the originals leave (their other lines go). One undo step
+    // per canvas under opts.coalesce. Returns the new top ids.
+    copyItemsTo(ids, targetId, opts = {}) {
+      const src = canvases.get(ui.canvasId);
+      const dst = canvases.get(targetId);
+      if (!src || !dst) return [];
+      const roots = outermost(src, ids);
+      if (!roots.length) return [];
+      const same = dst === src;
+      if (same && opts.move) return [];
+      const t = now();
+      const { items, links, idMap } = cloneItems(src, roots, t);
+      const newRoots = roots.map(r => idMap.get(r));
+      // Placement.
+      const byId = new Map(items.map(it => [it.id, it]));
+      if (same) {
+        for (const r of newRoots) { const it = byId.get(r); it.x += 40; it.y += 40; }
+      } else {
+        const tops = Object.values(dst.items).filter(it => it.parentId === null);
+        const right = tops.length ? Math.max(...tops.map(it => it.x + 160)) + 120 : 0;
+        const midY = tops.length ? tops.reduce((s, it) => s + it.y, 0) / tops.length : 0;
+        const fromTop = roots.filter(r => src.items[r].parentId === null);
+        const minX = fromTop.length ? Math.min(...fromTop.map(r => src.items[r].x)) : 0;
+        const minY = fromTop.length ? Math.min(...fromTop.map(r => src.items[r].y)) : 0;
+        let row = 0;
+        for (const r of roots) {
+          const it = byId.get(idMap.get(r));
+          it.parentId = null;
+          if (src.items[r].parentId === null) { it.x = right + (src.items[r].x - minX); it.y = midY + (src.items[r].y - minY); }
+          else { it.x = right + row * 170; it.y = midY - 200; row++; }
+        }
+      }
+      let z = maxZ(dst);
+      commit(opts.coalesce, () => {
+        for (const it of items) {
+          if (newRoots.includes(it.id)) {
+            it.z = ++z;
+            if (it.parentId !== null) {
+              const sibs = childrenOf(dst, it.parentId);
+              it.order = sibs.length ? sibs[sibs.length - 1].order + 1 : 0;
+            }
+          }
+          dst.items[it.id] = it;
+        }
+        for (const ln of links) dst.links[ln.id] = ln;
+      }, targetId);
+      if (opts.move) {
+        commit(opts.coalesce, doc => {
+          const gone = new Set();
+          for (const r of roots) { gone.add(r); for (const d of descendantsOf(doc, r)) gone.add(d); }
+          for (const g of gone) delete doc.items[g];
+          for (const [lid, ln] of Object.entries(doc.links)) if (gone.has(ln.from) || gone.has(ln.to)) delete doc.links[lid];
+        }, src.id);
+      }
+      return newRoots;
     },
 
     // ---- tags (R10, R11; phase 5) ----------------------------------------

@@ -413,3 +413,36 @@ export function filterHits(canvas, filter) {
 export function kindOf(item) {
   return item && KINDS.includes(item.kind) ? item.kind : 'blob';
 }
+
+// ---- copying items (phase 6: duplicate canvas, duplicate/move to canvas) ----
+// Copies `rootIds` and everything inside them out of `src` with new ids,
+// plus the lines between copied items. Returns { items, links, idMap }; the
+// copies keep their fields (positions, parents inside the copy); roots keep
+// their own parentId (the caller re-homes them).
+export function cloneItems(src, rootIds, now = Date.now()) {
+  const ids = [];
+  for (const r of rootIds) if (src.items[r]) ids.push(r, ...descendantsOf(src, r));
+  const idMap = new Map();
+  for (const id of ids) if (!idMap.has(id)) idMap.set(id, 'i-' + uuid());
+  const items = [];
+  for (const [oldId, newId] of idMap) {
+    const it = JSON.parse(JSON.stringify(src.items[oldId]));
+    it.id = newId;
+    if (it.parentId && idMap.has(it.parentId)) it.parentId = idMap.get(it.parentId);
+    it.createdAt = now;
+    it.updatedAt = now;
+    items.push(it);
+  }
+  const links = [];
+  for (const ln of Object.values(src.links)) {
+    if (!idMap.has(ln.from) || !idMap.has(ln.to)) continue;
+    links.push({ ...JSON.parse(JSON.stringify(ln)), id: 'l-' + uuid(), from: idMap.get(ln.from), to: idMap.get(ln.to), createdAt: now, updatedAt: now });
+  }
+  return { items, links, idMap };
+}
+
+// Only the outermost of `ids` (drops any whose ancestor is also listed).
+export function outermost(canvas, ids) {
+  const set = new Set(ids);
+  return ids.filter(id => canvas.items[id] && !ancestorsOf(canvas, id).some(a => set.has(a)));
+}

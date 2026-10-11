@@ -50,6 +50,7 @@ Numbered so the build phases and tests can refer to them.
 - **R1** Web app that runs and installs on Windows and Android (PWA). Simple code.
 - **R2** Easy sync between desktop and Android through Dropbox: loads on open, saves automatically after changes, works offline.
 - **R3** Multiple canvases: switch, new, rename, duplicate, delete.
+  - *As built (phase 6, 2026-10-12, owner's defaults):* tap the **canvas name** (top bar on PC, footer on phones) → your canvases (✓ current, item count) + **New canvas** (asks a name), **Rename** (undoable), **Duplicate** (everything incl. lines and settings, "… (copy)", you land on the copy), **Delete** (confirm, final; the last canvas can't be deleted). Each canvas keeps its own view, tag filter and undo history.
 - **R4** Each canvas exportable as a file (pictures included, importable as a new canvas on either device) and as a PNG picture.
 
 **Items**
@@ -81,6 +82,7 @@ Numbered so the build phases and tests can refer to them.
 - **R26** While a dragged blob is held over another (arming), the target swells enough that its edge shows **all around the held blob** (title and notes included), so you can see which blob you're dropping into.
 - **R19** ✎ or long-press → edit the item.
 - **R20** Duplicate an item into a canvas (any canvas, including the current one) with everything inside it, all its text included. Also "Move to canvas…".
+  - *As built:* item editor **Duplicate / move to canvas…** and selection bar **To canvas…** → Duplicate to… / Move to… → pick the canvas. Everything inside and the lines between the copied items come along. Same canvas: 40 px down-right of the originals, same level, others make room (Undo). Another canvas: its top level, **to the right of what is already there** (C12 said "near the middle" — moved right so nothing overlaps an unseen board; flagged), toast "Copied to … — Go there"; a move removes the originals (and their lines to items left behind); Undo puts both canvases back.
 
 **Links**
 - **R21** Connect two items with a line by dragging from the **connect handle** (top-left of the blob: a thin black arrow icon ↗; on hover on PC, on the selected blob on phone) onto another blob. A new line has an **arrowhead at the end you dragged to**. Lines are **"gooey strings"**: thick where they leave a blob, thinner in the middle and thinner the longer they're pulled, hanging slightly, bending and wobbling as their blobs move; coloured as a fade from one blob's colour to the other's. Lines **follow the edge of an open blob** (tray or container view).
@@ -314,7 +316,7 @@ BlobBoard/
 │                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js · formationPanel.js (R34) ·
 │                   pictures.js (picture library at run time) · imageLibrary.js (picker + grid)
 │                   tagPicker.js (editor tags field, ⚙ Tags manager, filter menu)
-│                phase 6+ — canvasMenu.js
+│                   canvasMenu.js (phase 6: switcher + canvas actions, duplicate / move items)
 ├─ icons/                  phase 9 — app icons (192 px, 512 px, maskable)
 ├─ tests/                  ✅ index.html + runner.js + smoke/model/services/store/physics/links/select/richtext
 │                             .test.js (in-browser unit tests, 98)
@@ -720,7 +722,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 4 Pictures and cards ✅ | picture library, processing, card look, thumbnails toggle + morph | R7–R8 pass |
 | 5b Shapes + free text ✅ (added) | R37 shapes (6, resize handles, lines, Bouncing), R38 free text (in-place rich text), + menu | unit tests; owner checks on phone |
 | 5 Tags ✅ | picker with create, chips, manager, filter | R10–R11 pass |
-| 6 Canvases | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
+| 6 Canvases ✅ | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
 | 7 Export / import | file export/import, PNG picture, Android share | round-trip test passes |
 | 8 Dropbox sync | sign-in, sync engine, merge, status pill, live updates, one-window lock | two-device scenarios pass |
 | 9 App polish | offline cache, update prompt, icons, install on both devices, speed pass | installed on both; works offline |
