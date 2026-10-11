@@ -8,6 +8,7 @@ import { createFormationUI, MIN_SELECTED } from './formationPanel.js';
 import { ringLayout } from '../services/formations.js';
 import { createFilterMenu } from './tagPicker.js';
 import { createCanvasMenu, copyOrMoveItems } from './canvasMenu.js';
+import { saveEncrypted, openSaved, exportPicture } from './saveFiles.js';
 import { SHAPES, SHAPE_IDS, shapePath } from '../services/shapes.js';
 import { createSettingsSheet } from './settingsSheet.js';
 import { createLineSheet } from './lineSheet.js';
@@ -521,7 +522,12 @@ export function mountApp({ root, store, repo, pictures = null }) {
 
   // ---- canvases (phase 6) -----------------------------------------------------------
   const canvasMenu = createCanvasMenu({ root, store, extra: () => (canvasExtras ? canvasExtras() : []) });
-  let canvasExtras = null; // phase 7 adds save / open / export picture
+  // Phase 7: the app's encrypted save file, opening one, and a PNG.
+  let canvasExtras = () => [
+    { label: 'Save to file…', run: () => saveEncrypted({ store, pictures }) },
+    { label: 'Open saved file…', run: () => openSaved({ store, pictures }) },
+    { label: 'Export picture', run: () => exportPicture({ store, board }) }
+  ];
   name.addEventListener('click', () => canvasMenu.open(name));
   footName.addEventListener('click', () => canvasMenu.open(footName));
   selCanvas.addEventListener('click', () => copyOrMoveItems(store, store.ui.selectedIds, copied));

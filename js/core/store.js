@@ -479,6 +479,29 @@ export function createStore({ repo, now = () => Date.now() }) {
       return doc.id;
     },
 
+    // Phase 7: a canvas from a save file becomes a NEW canvas (fresh ids, a
+    // unique name). tagMap: imported tag id -> tag id here (unknown dropped).
+    importCanvas(src, opts = {}) {
+      const t = now();
+      const doc = newCanvas(cleanCanvasName(src.name) || 'Imported canvas', t);
+      doc.settings = JSON.parse(JSON.stringify(src.settings || doc.settings));
+      const names = new Set([...canvases.values()].map(d => d.name));
+      const base = doc.name;
+      for (let k = 2; names.has(doc.name); k++) doc.name = cleanCanvasName(base + ' (' + k + ')');
+      const tops = Object.values(src.items).filter(it => it.parentId === null).map(it => it.id);
+      const { items, links } = cloneItems(src, tops, t);
+      const map = opts.tagMap || new Map();
+      for (const it of items) {
+        it.tagIds = (it.tagIds || []).map(id => map.get(id)).filter(Boolean);
+        doc.items[it.id] = it;
+      }
+      for (const ln of links) doc.links[ln.id] = ln;
+      canvases.set(doc.id, doc);
+      repo.saveCanvas(doc);
+      events.emit({ type: 'canvases' });
+      return doc.id;
+    },
+
     // Final (no undo). The last canvas can't be deleted. Switches away first.
     deleteCanvas(id) {
       if (!canvases.has(id) || canvases.size <= 1) return false;

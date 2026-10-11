@@ -1013,6 +1013,30 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     p.resolve(id);
   }
 
+  // Phase 7 (export picture): what's on the board, as the drawer needs it.
+  function exportScene() {
+    const r = rect();
+    const doc = store.canvas();
+    const items = boardItems().slice().sort((a, b) => a.z - b.z).map(it => {
+      const el = els.get(it.id);
+      const s = measure(it.id);
+      const kind = kindOf(it);
+      const kids = kind === 'blob' ? childrenOf(doc, it.id) : [];
+      const card = !!(el && el.classList.contains('card'));
+      const pic = card ? picOf(it.thumbId) : null;
+      return {
+        id: it.id, kind, x: it.x - s.w / 2, y: it.y, w: s.w, h: s.h,
+        rd: el ? el._phys.visual().rd : 1,
+        color: it.color, title: it.title, notes: it.notes, notesHtml: it.notesHtml, done: !!it.done && kind === 'blob',
+        shape: it.shape, faded: isFaded(it.id),
+        card, img: card && el ? el._parts.img : null, aspect: pic ? pic.aspect : 1,
+        tags: kind === 'blob' ? tagsOf(it.tagIds || []) : [],
+        kids: kids.slice(0, 6).map(k => k.color), kidCount: kids.length
+      };
+    });
+    return { view: { ...view }, width: r.width, height: r.height, items, links: links.snapshot() };
+  }
+
   // R38: type into a free text in place (a new one joins its creation step).
   function startTextEdit(id, key) {
     const el = els.get(id);
@@ -1034,6 +1058,7 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     nodeOf,
     arrange,
     startTextEdit,
+    exportScene,
     positions,
     glideFrom: glideFromMap,
     pickBlob,

@@ -231,6 +231,7 @@ export function createLinksLayer({ world, before, store, geom, color, faded = ()
     }
     v.label.style.visibility = '';
     v.label.style.transform = 'translate(' + Math.round(p.x) + 'px, ' + Math.round(p.y) + 'px) translate(-50%, -50%)';
+    v.labelAt = { x: p.x, y: p.y };
     v.labelKey = key;
   }
 
@@ -307,7 +308,27 @@ export function createLinksLayer({ world, before, store, geom, color, faded = ()
 
   const unsubscribe = onFrame(frame);
 
+  // Phase 7 (export picture): every visible line as drawn now — outline,
+  // arrowheads, gradient ends and colours, faded, label text + position.
+  function snapshot() {
+    const out = [];
+    for (const v of views.values()) {
+      const d = v.goo.getAttribute('d');
+      if (!d) continue;
+      const g = k => Number(v.grad.getAttribute(k)) || 0;
+      out.push({
+        d, arrows: v.heads.getAttribute('d') || '',
+        x1: g('x1'), y1: g('y1'), x2: g('x2'), y2: g('y2'),
+        c0: v.c0, c1: v.c1,
+        faded: v.g.classList.contains('faded'),
+        label: v.text || '', labelAt: v.labelAt || null
+      });
+    }
+    return out;
+  }
+
   return {
+    snapshot,
     render,
     startTemp,
     moveTemp,

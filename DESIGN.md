@@ -52,6 +52,7 @@ Numbered so the build phases and tests can refer to them.
 - **R3** Multiple canvases: switch, new, rename, duplicate, delete.
   - *As built (phase 6, 2026-10-12, owner's defaults):* tap the **canvas name** (top bar on PC, footer on phones) → your canvases (✓ current, item count) + **New canvas** (asks a name), **Rename** (undoable), **Duplicate** (everything incl. lines and settings, "… (copy)", you land on the copy), **Delete** (confirm, final; the last canvas can't be deleted). Each canvas keeps its own view, tag filter and undo history.
 - **R4** Each canvas exportable as a file (pictures included, importable as a new canvas on either device) and as a PNG picture.
+  - *As built (phase 7, 2026-10-12; owner: "a native encrypted save specific to the app that can be transferred with the images, and then also the export"):* canvas menu → **Save to file…** (this canvas or all canvases) → choose a password (≥ 6 characters, typed twice; it can't be recovered) → a **`.blobboard`** file: JSON (canvases + the tags and pictures they use) → gzip → **AES-256-GCM** with a key from the password (**PBKDF2-SHA-256, 600 000 rounds**, random salt + IV); header `BLOBBOARD-ENC1`. **Open saved file…** → password (asks again if wrong) → every canvas in it is added as a **new** canvas (fresh ids, unique name), tags matched by name, pictures by fingerprint; damaged parts are left out and counted; files from newer versions are refused. **Export picture** → PNG of the board you're looking at (groups closed, C11), drawn from the data at 2× — dots, lines + labels, blobs, cards with pictures, shapes, free text, chips, group dots + badge, ✓. On phones that can, **Share…** or Download; elsewhere a download. *Deviation:* no plain (unencrypted) JSON export — the encrypted save replaces it.
 
 **Items**
 - **R5** Item = title (always readable), optional thumbnail, colour, notes, tags, done tick (greys the item out). No due dates.
@@ -310,7 +311,7 @@ BlobBoard/
 │  ├─ services/  ✅ layout.js · geometry.js · color.js · strand.js (gooey-string geometry) ·
 │  │                formations.js (R34 layouts: Ring, Rows, Pyramid) · imageProcessor.js (phase 4) ·
 │  │                shapes.js (R37 outlines, polygon edge distance)
-│  │             phase 7 — exportJson.js · exportPng.js
+│  │                backup.js (phase 7: encrypted .blobboard save) · exportPng.js (phase 7: PNG)
 │  └─ ui/        ✅ app.js · board.js · itemView.js · tray.js · physics.js · gestures.js ·
 │                   linksLayer.js · lineSheet.js · lineLookFields.js · richText.js · motionPanel.js ·
 │                   editSheet.js · colorPicker.js · settingsSheet.js · dialogs.js · formationPanel.js (R34) ·
@@ -723,7 +724,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 5b Shapes + free text ✅ (added) | R37 shapes (6, resize handles, lines, Bouncing), R38 free text (in-place rich text), + menu | unit tests; owner checks on phone |
 | 5 Tags ✅ | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases ✅ | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
-| 7 Export / import | file export/import, PNG picture, Android share | round-trip test passes |
+| 7 Export / import ✅ (encrypted save) | file export/import, PNG picture, Android share | round-trip test passes |
 | 8 Dropbox sync | sign-in, sync engine, merge, status pill, live updates, one-window lock | two-device scenarios pass |
 | 9 App polish | offline cache, update prompt, icons, install on both devices, speed pass | installed on both; works offline |
 

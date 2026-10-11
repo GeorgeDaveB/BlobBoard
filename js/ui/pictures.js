@@ -74,6 +74,26 @@ export async function createPictureLibrary(repo, canvases = []) {
       return true;
     },
 
+    // Phase 7: the stored file of a picture (for the save file), or null.
+    blobOf(id) {
+      const r = recs.get(id);
+      return r ? { blob: r.blob, w: r.w, h: r.h } : null;
+    },
+
+    // Phase 7: a picture from a save file (same fingerprint = already here).
+    async importRecord({ id, blob, w, h }) {
+      const old = recs.get(id);
+      if (old) {
+        if (old.deleted) { old.deleted = false; await repo.putImage(old); emit(); }
+        return false;
+      }
+      const rec = { id, blob, w, h, bytes: blob.size, createdAt: Date.now() };
+      await repo.putImage(rec);
+      recs.set(id, rec);
+      emit();
+      return true;
+    },
+
     // Undo of a delete: shows it in the library again.
     async restore(id) {
       const r = recs.get(id);
