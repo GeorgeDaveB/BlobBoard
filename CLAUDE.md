@@ -15,7 +15,7 @@ One bullet, ≤15 words, no explanation.
 
 - Hidden browser pane: no rAF/ResizeObserver, throttled timers, no focus; use `tick()`, screenshots.
 
-- Pages deploy stuck queued: poll live js/version.js, not GitHub API.
+- Pages deploy stuck: poll live js/version.js; no run for the commit → push empty commit.
 
 - HANDOVER repeats "requirements R1–Rn"; doc patches must replace every occurrence.
 
