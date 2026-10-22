@@ -1059,6 +1059,11 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
     arrange,
     startTextEdit,
     exportScene,
+    // Phase 8: sync waits while you drag, resize, draw a line or select, or type on the board.
+    get busy() {
+      const a = document.activeElement;
+      return !!(drag || resizing || linking || box) || !!(a && boardEl.contains(a) && a.closest('[contenteditable="true"], input, textarea'));
+    },
     positions,
     glideFrom: glideFromMap,
     pickBlob,

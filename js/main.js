@@ -4,9 +4,15 @@ import { createStore } from './core/store.js';
 import { newCanvas, sanitizeCanvas, sanitizeTag } from './core/model.js';
 import { mountApp } from './ui/app.js';
 import { createPictureLibrary } from './ui/pictures.js';
+import { acquireWindowLock, showLostLock } from './ui/windowLock.js';
 
 async function boot() {
+  // Phase 8: one window at a time (the other stops and says so).
+  let app = null;
+  let repoRef = null;
+  await acquireWindowLock({ onLost: () => { if (repoRef) repoRef.flush(); if (app && app.sync) app.sync.pause(); showLostLock(); } });
   const repo = await openRepo();
+  repoRef = repo;
   let canvases = (await repo.loadCanvases()).map(c => sanitizeCanvas(c).doc);
   if (!canvases.length) {
     const first = newCanvas('My first canvas');
@@ -35,7 +41,7 @@ async function boot() {
   // Picture library (phase 4); a broken one never stops the app.
   const pictures = await createPictureLibrary(repo, canvases).catch(err => { console.error('Pictures unavailable', err); return null; });
 
-  mountApp({ root: document.getElementById('app'), store, repo, pictures });
+  app = mountApp({ root: document.getElementById('app'), store, repo, pictures });
 
   // Save right away when the app is hidden or closed (phones kill background apps).
   document.addEventListener('visibilitychange', () => { if (document.hidden) repo.flush(); });

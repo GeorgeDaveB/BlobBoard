@@ -593,6 +593,8 @@ All buttons are at least 40 × 40 px on touch screens.
 
 ## 11. Sync design
 
+*As built (phase 8, 2026-10-22):* Dropbox app **SlimeGate** (App key in `js/config.js`; App folder access; PKCE, no secret). **Everything in Dropbox is encrypted** (owner): a **sync passphrase** (≥ 8 characters, separate from save-file passwords) → PBKDF2-SHA-256 600 000 → AES-256-GCM per file (random IV, gzip inside); `vault.json` holds the salt and an encrypted check value so another device can verify the passphrase; the key is kept on each device as a non-extractable key (the passphrase is not stored). Forgot it → ⚙ Sync → **Start over** empties the SlimeGate folder and uploads this device's boards with a new passphrase. Files: `vault.json`, `tags.bin`, `canvases/<id>.bin`, `images/<pictureId>.bin`, `backups/<canvasId>/<time>-<PC|Phone>.bin` (newest 20). "Edited here" = differs from the last agreed version (no dirty flag). First connection keeps everything: a new device's empty starter canvas with the same name as one in Dropbox is dropped; other same-named canvases get "(PC)" / "(Phone)". The same tag name made on two devices becomes one tag (the older), items follow. Changes from the other device clear that canvas's undo history. Status pill: top bar on PC, footer on phones. One window at a time (Web Locks; "Use here"). Not built: changing the passphrase; Dropbox "production" status (limit 50 users until applied for).
+
 ### 11.1 What lives in your Dropbox
 
 The app only gets its own folder, `Dropbox/Apps/<your app name>/`, and cannot see anything else in your Dropbox.
@@ -725,7 +727,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 | 5 Tags ✅ | picker with create, chips, manager, filter | R10–R11 pass |
 | 6 Canvases ✅ | switcher, new/rename/duplicate/delete, duplicate/move item to canvas | R3, R20 pass |
 | 7 Export / import ✅ (encrypted save) | file export/import, PNG picture, Android share | round-trip test passes |
-| 8 Dropbox sync | sign-in, sync engine, merge, status pill, live updates, one-window lock | two-device scenarios pass |
+| 8 Dropbox sync ✅ (owner to test on 2 devices) | sign-in, sync engine, merge, status pill, live updates, one-window lock | two-device scenarios pass |
 | 9 App polish | offline cache, update prompt, icons, install on both devices, speed pass | installed on both; works offline |
 
 ---
@@ -737,7 +739,7 @@ Each phase ends with a deploy to GitHub Pages so you can try it on your phone.
 2. Settings → Pages → Source: *Deploy from a branch* → `main`, `/ (root)`.
 3. Tell me your GitHub username (needed for the app's address and the Dropbox redirect). You push with your own login; I'll give you the commands.
 
-**Dropbox (before phase 8)**
+**Dropbox (before phase 8)** — ✅ done 2026-10-22 (app "SlimeGate")
 1. dropbox.com/developers/apps → *Create app* → *Scoped access* → *App folder* → a unique name (e.g. `BlobBoard-GB`).
 2. *Permissions* tab: tick `files.metadata.read`, `files.content.read`, `files.content.write` → Submit.
 3. *Settings* tab: Redirect URIs → add `https://<username>.github.io/BlobBoard/` and `http://localhost:8000/`. Set *Allow public clients (Implicit Grant & PKCE)* to **Allow**.

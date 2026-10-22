@@ -573,6 +573,62 @@ export function createStore({ repo, now = () => Date.now() }) {
       return newRoots;
     },
 
+    // ---- sync (phase 8): changes that arrive from the other device -----------
+    // They are not undoable here: the canvas's undo history is cleared (an
+    // undo would otherwise bring back the other device's old version).
+    putCanvasFromSync(doc) {
+      const copy = JSON.parse(JSON.stringify(doc));
+      const isNew = !canvases.has(copy.id);
+      canvases.set(copy.id, copy);
+      history.delete(copy.id);
+      repo.saveCanvas(copy);
+      if (copy.id === ui.canvasId) fixUi();
+      events.emit(isNew ? { type: 'canvases', remote: true } : { type: 'data', canvasId: copy.id, history: true, remote: true });
+    },
+
+    // Deleted on the other device. The last canvas is replaced by an empty one.
+    removeCanvasFromSync(id) {
+      if (!canvases.has(id)) return;
+      if (canvases.size <= 1) {
+        const doc = newCanvas('My first canvas', now());
+        canvases.set(doc.id, doc);
+        repo.saveCanvas(doc);
+      }
+      if (ui.canvasId === id) store.switchCanvas(store.canvasList().find(c => c.id !== id).id);
+      canvases.delete(id);
+      history.delete(id);
+      if (repo.deleteCanvas) repo.deleteCanvas(id);
+      events.emit({ type: 'canvases', remote: true });
+    },
+
+    // Every tag incl. deleted ones, by id (what sync compares and uploads).
+    allTags() { return [...tags.values()].map(t => ({ ...t })).sort((a, b) => (a.id < b.id ? -1 : 1)); },
+
+    setTagsFromSync(list) {
+      const next = new Map(list.map(t => [t.id, { ...t }]));
+      for (const [id, t] of next) if (JSON.stringify(t) !== JSON.stringify(tags.get(id))) saveTag(t);
+      tags.clear();
+      for (const [id, t] of next) tags.set(id, t);
+      fixUi();
+      events.emit({ type: 'tags', remote: true });
+    },
+
+    // Tag ids replaced on every canvas (two devices made the same tag).
+    remapTagIds(map) {
+      for (const cid of canvases.keys()) {
+        commit(null, (doc, t) => {
+          let changed = false;
+          for (const it of Object.values(doc.items)) {
+            if (!(it.tagIds || []).some(id => map.has(id))) continue;
+            it.tagIds = [...new Set(it.tagIds.map(id => map.get(id) || id))];
+            it.updatedAt = t;
+            changed = true;
+          }
+          if (!changed) return false;
+        }, cid);
+      }
+    },
+
     // ---- tags (R10, R11; phase 5) ----------------------------------------
     // Live tags, A–Z.
     tags() { return [...tags.values()].filter(t => !t.deleted).sort((a, b) => a.name.localeCompare(b.name)); },

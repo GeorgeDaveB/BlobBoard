@@ -9,6 +9,8 @@ import { ringLayout } from '../services/formations.js';
 import { createFilterMenu } from './tagPicker.js';
 import { createCanvasMenu, copyOrMoveItems } from './canvasMenu.js';
 import { saveEncrypted, openSaved, exportPicture } from './saveFiles.js';
+import { createSyncController } from '../sync/syncController.js';
+import { createSyncPanel, createSyncPill } from './syncPanel.js';
 import { SHAPES, SHAPE_IDS, shapePath } from '../services/shapes.js';
 import { createSettingsSheet } from './settingsSheet.js';
 import { createLineSheet } from './lineSheet.js';
@@ -67,7 +69,12 @@ export function mountApp({ root, store, repo, pictures = null }) {
   filterBadge.className = 'filter-badge';
   filterBadge.hidden = true;
   btnFilter.append(filterBadge);
-  tools.append(btnMode, btnBounce, btnFilter, sep(), btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), btnGear);
+  // Phase 8: Dropbox sync status (top bar on PC; footer on phones).
+  const pillTop = createSyncPill(() => openSettings('sync'));
+  const pillFoot = createSyncPill(() => openSettings('sync'));
+  pillTop.el.classList.add('pill-top');
+  pillFoot.el.classList.add('pill-foot');
+  tools.append(btnMode, btnBounce, btnFilter, sep(), btnUndo, btnRedo, sep(), btnOut, btnIn, btnFit, sep(), pillTop.el, btnGear);
   top.append(name, tools);
 
   const main = document.createElement('main');
@@ -85,7 +92,7 @@ export function mountApp({ root, store, repo, pictures = null }) {
   footName.type = 'button';
   footName.title = 'Canvases';
   footName.className = 'foot-name';
-  foot.append(footName);
+  foot.append(footName, pillFoot.el);
   root.append(top, main, foot, fab);
   initDialogs(root);
 
@@ -223,10 +230,24 @@ export function mountApp({ root, store, repo, pictures = null }) {
   applyMotion(motion);
   repo.getSetting('motion').then(m => { if (m && typeof m === 'object') applyMotion({ ...defaultMotion(), ...m }); }).catch(() => {});
 
+  // ---- Dropbox sync (phase 8) --------------------------------------------------
+  const device = matchMedia('(pointer: coarse)').matches ? 'Phone' : 'PC';
+  let syncPanel = null;
+  const sync = createSyncController({
+    repo, store, pictures, device,
+    isBusy: () => board.busy || editor.isOpen || lineSheet.isOpen,
+    onChange: s => { pillTop.update(s); pillFoot.update(s); if (syncPanel) syncPanel.update(s); },
+    onNotice: msg => toast(msg, { ms: 9000 })
+  });
+  syncPanel = createSyncPanel({ controller: sync });
+  pillTop.update(sync.status);
+  pillFoot.update(sync.status);
+
   const settings = createSettingsSheet({
     host: root,
     store,
     pictures,
+    syncEl: syncPanel.el,
     onRequestClose: () => closeLayer(settingsLayer),
     motion: {
       get: () => motion,
@@ -235,11 +256,11 @@ export function mountApp({ root, store, repo, pictures = null }) {
   });
   let settingsLayer = 0;
   // Side panels (settings, item editor, line editor) replace each other.
-  function openSettings() {
-    if (settings.isOpen) return;
+  function openSettings(tab) {
+    if (settings.isOpen) { if (typeof tab === 'string') settings.showTab(tab); return; }
     if (editor.isOpen) closeLayer(editorLayer);
     if (lineSheet.isOpen) closeLayer(lineLayer);
-    settings.open();
+    settings.open(typeof tab === 'string' ? tab : undefined);
     settingsLayer = openLayer(() => { settingsLayer = 0; settings.close(); });
   }
 
@@ -577,12 +598,19 @@ export function mountApp({ root, store, repo, pictures = null }) {
   // ---- Bouncing (R34) ----------------------------------------------------------
   const formations = createFormationUI({ root, store, board, openLayer, closeLayer });
 
+  // Sync: finish a Dropbox sign-in we just came back from, or resume.
+  sync.init().then(back => {
+    if (back === 'connected') { openSettings('sync'); syncPanel.setUp(); }
+    else if (back === 'denied') toast('Dropbox connection cancelled');
+    else if (back === 'failed') toast('Dropbox sign-in didn\u2019t finish \u2014 try Connect again');
+  }).catch(err => console.error('Sync start failed', err));
+
   // ---- start --------------------------------------------------------------
   board.render();
   refreshChrome();
   showView();
 
-  return { board, editor };
+  return { board, editor, sync };
 }
 
 function iconButton(icon, label) {

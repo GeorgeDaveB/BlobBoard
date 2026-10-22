@@ -20,7 +20,7 @@ const OPTIONS = [
 ];
 
 // motion: { get(), set(next) } — the device's motion switches (app.js).
-export function createSettingsSheet({ host, store, pictures, onRequestClose, motion }) {
+export function createSettingsSheet({ host, store, pictures, onRequestClose, motion, syncEl = null }) {
   const sheet = document.createElement('section');
   sheet.className = 'sheet settings-sheet';
   sheet.setAttribute('role', 'dialog');
@@ -86,7 +86,12 @@ export function createSettingsSheet({ host, store, pictures, onRequestClose, mot
   const tagManager = createTagManager({ store });
   tagsPane.append(tagManager.el);
 
-  const tabBtns = [['canvas', 'Canvas', canvasPane], ['tags', 'Tags', tagsPane], ['pictures', 'Pictures', picsPane], ['motion', 'Motion', motionPane]].map(([id, text, pane]) => {
+  // Sync (phase 8): Dropbox, this device.
+  const syncPane = document.createElement('div');
+  syncPane.className = 'settings-pane';
+  if (syncEl) syncPane.append(syncEl);
+
+  const tabBtns = [['canvas', 'Canvas', canvasPane], ['tags', 'Tags', tagsPane], ['pictures', 'Pictures', picsPane], ['sync', 'Sync', syncPane], ['motion', 'Motion', motionPane]].filter(t => t[0] !== 'sync' || syncEl).map(([id, text, pane]) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'seg-btn';
@@ -223,7 +228,7 @@ export function createSettingsSheet({ host, store, pictures, onRequestClose, mot
   note.textContent = 'Saved with this canvas. · Version ' + APP_VERSION;
 
   canvasPane.append(thumbRow, group, grow, linesTitle, linesHint, lineLook.el, applyAll);
-  body.append(tabs, canvasPane, tagsPane, picsPane, motionPane, note);
+  body.append(tabs, canvasPane, tagsPane, picsPane, syncPane, motionPane, note);
   showTab('canvas');
   sheet.append(head, body);
   host.append(sheet);
@@ -245,12 +250,14 @@ export function createSettingsSheet({ host, store, pictures, onRequestClose, mot
   return {
     el: sheet,
     get isOpen() { return sheet.classList.contains('open'); },
-    open() {
+    open(tab) {
       sliderSeq++;
       lineLook.reset();
       sync();
+      if (tab) showTab(tab);
       sheet.classList.add('open');
     },
+    showTab,
     close() { sheet.classList.remove('open'); }
   };
 }
