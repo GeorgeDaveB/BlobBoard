@@ -8,7 +8,7 @@ import { createFormationUI, MIN_SELECTED } from './formationPanel.js';
 import { ringLayout } from '../services/formations.js';
 import { createFilterMenu } from './tagPicker.js';
 import { createCanvasMenu, copyOrMoveItems } from './canvasMenu.js';
-import { saveEncrypted, openSaved, exportPicture } from './saveFiles.js';
+import { saveToFile, openSaved, changeFilePassword, exportJson, exportPicture } from './saveFiles.js';
 import { createSyncController } from '../sync/syncController.js';
 import { createSyncPanel, createSyncPill } from './syncPanel.js';
 import { SHAPES, SHAPE_IDS, shapePath } from '../services/shapes.js';
@@ -545,8 +545,10 @@ export function mountApp({ root, store, repo, pictures = null }) {
   const canvasMenu = createCanvasMenu({ root, store, extra: () => (canvasExtras ? canvasExtras() : []) });
   // Phase 7: the app's encrypted save file, opening one, and a PNG.
   let canvasExtras = () => [
-    { label: 'Save to file…', run: () => saveEncrypted({ store, pictures }) },
+    { label: 'Save to file…', run: () => saveToFile({ store, pictures }) },
     { label: 'Open saved file…', run: () => openSaved({ store, pictures }) },
+    { label: 'Change file password…', run: () => changeFilePassword() },
+    { label: 'Export JSON', run: () => exportJson({ store, pictures }) },
     { label: 'Export picture', run: () => exportPicture({ store, board }) }
   ];
   name.addEventListener('click', () => canvasMenu.open(name));

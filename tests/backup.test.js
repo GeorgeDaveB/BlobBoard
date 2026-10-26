@@ -1,5 +1,5 @@
 import { assert, assertEqual } from './runner.js';
-import { encryptJson, decryptFile, isBackupFile, buildPayload, readPayload, backupName, BackupError, MAGIC } from '../js/services/backup.js';
+import { encryptJson, decryptFile, isBackupFile, buildPayload, readPayload, backupName, BackupError, MAGIC, plainFile, sniffFile, baseName } from '../js/services/backup.js';
 import { drawScene, wrap, textBlocks } from '../js/services/exportPng.js';
 import { createStore } from '../js/core/store.js';
 import { newCanvas } from '../js/core/model.js';
@@ -104,4 +104,18 @@ export const tests = {
     assert(lines.length === 3 && lines[2].endsWith('…'), 'wraps to 3 lines and ends with …');
     assertEqual(textBlocks('<h3>Plan</h3><ul><li>one</li><li>two</li></ul>').map(b => [b.text, !!b.heading, b.bullet || '']), [['Plan', true, ''], ['one', false, '•'], ['two', false, '•']]);
   }
+};
+
+// ---- files without a password (owner 2026-10-26) ----
+tests['no-password file and JSON export: plain JSON that opens; locked files are recognised'] = async () => {
+  const payload = { app: 'BlobBoard', v: 1, canvases: [], tags: [], pictures: [] };
+  const blob = plainFile(payload);
+  assertEqual(blob.type, 'application/json');
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  assertEqual(JSON.parse(new TextDecoder().decode(bytes)).app, 'BlobBoard', 'readable JSON');
+  assertEqual(sniffFile(bytes), { kind: 'plain', payload });
+  const locked = new Uint8Array(await (await encryptJson(payload, 'pw123456', FAST)).arrayBuffer());
+  assertEqual(sniffFile(locked).kind, 'locked');
+  assertEqual(sniffFile(new TextEncoder().encode('{"app":"Other"}')).kind, 'unknown');
+  assertEqual([baseName('Life.blobboard'), baseName('Life.json'), baseName('Life')], ['Life', 'Life', 'Life']);
 };

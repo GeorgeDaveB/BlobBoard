@@ -1,6 +1,7 @@
 import { assert, assertEqual } from './runner.js';
 import { mergeSet, mergeRecord, mergeCanvas, mergeTags } from '../js/sync/merge.js';
-import { createVault, unlockVault, sealJson, openJson } from '../js/sync/vault.js';
+import { createVault, unlockVault, sealJson, openJson, encodeJson, decodeJson } from '../js/sync/vault.js';
+import { createSyncController } from '../js/sync/syncController.js';
 import { createSyncEngine, PATHS } from '../js/sync/syncEngine.js';
 import { apiArg } from '../js/sync/dropboxApi.js';
 import { authorizeUrl, redirectUri, pkcePair } from '../js/sync/dropboxAuth.js';
@@ -28,10 +29,14 @@ function fakeDropbox() {
       return { rev };
     },
     async download(path) { const f = files.get(path); return f ? { bytes: f.bytes, rev: f.rev } : null; },
-    async listFolder(folder) {
-      const entries = [...files.entries()].filter(([p]) => inFolder(folder, p)).map(([p, f]) => ({ '.tag': 'file', name: p.slice(folder.length + 1), path_lower: p, rev: f.rev }));
+    async listFolder(folder, { recursive = false } = {}) {
+      const entries = [...files.entries()]
+        .filter(([p]) => (recursive ? p.startsWith(folder + '/') : inFolder(folder, p)))
+        .map(([p, f]) => ({ '.tag': 'file', name: p.split('/').pop(), path_lower: p, path_display: p, rev: f.rev }));
       return { entries, cursor: 'c' };
     },
+    async latestCursor() { return 'c'; },
+    longpoll() { return new Promise(() => {}); }, // never fires in tests
     async remove(path) { return files.delete(path); }
   };
 }
@@ -59,6 +64,18 @@ async function twoDevices() {
   const dbx = fakeDropbox();
   const { key } = await createVault('correct horse', FAST);
   return { dbx, key, A: device('PC', dbx, key, { clock }), B: device('Phone', dbx, key, { clock }), clock };
+}
+
+// A device driven through the sync controller (as the app does).
+function ctrlDevice(name, dbx, clock) {
+  const settings = new Map();
+  const repo = { saveCanvas() {}, saveTag() {}, deleteCanvas() {}, flush: async () => {}, getSetting: async k => settings.get(k), setSetting: async (k, v) => { settings.set(k, v); } };
+  const store = createStore({ repo, now: clock });
+  const c = newCanvas(name + ' board', clock());
+  store.load([c], c.id, []);
+  const states = [];
+  const ctrl = createSyncController({ repo, store, pictures: null, device: name, api: dbx, onChange: s => states.push(s) });
+  return { store, ctrl, states, last: () => states[states.length - 1] || {} };
 }
 
 export const tests = {
@@ -224,4 +241,51 @@ export const tests = {
     await B.engine.syncNow();
     assert(Object.values(B.store.canvas(A.store.ui.canvasId).items).some(i => i.title === 'While busy'));
   }
+};
+
+// ---- sync password optional (owner 2026-10-26) ----
+tests['no password: files are just compressed JSON; with a key they are locked'] = async () => {
+  const plain = await encodeJson(null, { a: 'Γεια' });
+  assertEqual(await decodeJson(null, plain), { a: 'Γεια' });
+  const { key } = await createVault('long enough pw', FAST);
+  const locked = await encodeJson(key, { a: 1 });
+  let threw = false;
+  try { await decodeJson(null, locked); } catch (_) { threw = true; }
+  assert(threw, 'a locked file needs the key');
+};
+
+tests['controller: folder without a password; add, change and remove the sync password — the other device follows'] = async () => {
+  let t = 5000;
+  const clock = () => ++t;
+  const dbx = fakeDropbox();
+  const A = ctrlDevice('PC', dbx, clock), B = ctrlDevice('Phone', dbx, clock);
+  assertEqual(await A.ctrl.createFolder(null), 'ok');
+  assertEqual([A.ctrl.mode, A.ctrl.phase], ['plain', 'on']);
+  const x = A.store.createItem({ title: 'From PC' });
+  await A.ctrl.syncNow();
+  assertEqual(await B.ctrl.folderMode(), 'plain');
+  assertEqual(await B.ctrl.join(), 'ok');
+  await B.ctrl.syncNow();
+  assertEqual(B.store.canvas(A.store.ui.canvasId).items[x].title, 'From PC');
+  // Add a password on A: every file rewritten, B is asked once.
+  await A.ctrl.setPassword('new password 1');
+  assertEqual(A.ctrl.mode, 'password');
+  const raw = dbx.files.get(PATHS.canvas(A.store.ui.canvasId)).bytes;
+  let readable = true;
+  try { await decodeJson(null, raw); } catch (_) { readable = false; }
+  assert(!readable, 'files are locked now');
+  await B.ctrl.syncNow();
+  assertEqual([B.ctrl.phase, B.last().state], ['setup', 'locked']);
+  assertEqual(await B.ctrl.unlock('wrong one!!'), false);
+  assertEqual(await B.ctrl.unlock('new password 1'), true);
+  A.store.updateItem(x, { title: 'Changed with a password' });
+  await A.ctrl.syncNow();
+  await B.ctrl.syncNow();
+  assertEqual(B.store.canvas(A.store.ui.canvasId).items[x].title, 'Changed with a password');
+  // Remove it again: B follows by itself.
+  await A.ctrl.setPassword(null);
+  await B.ctrl.syncNow();
+  assertEqual([B.ctrl.mode, B.ctrl.phase, B.last().state], ['plain', 'on', 'synced']);
+  A.ctrl.pause();
+  B.ctrl.pause();
 };

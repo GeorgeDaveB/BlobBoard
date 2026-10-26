@@ -160,3 +160,25 @@ export function backupName(canvasNames, date = new Date()) {
   const safe = s => String(s).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Canvas';
   return (canvasNames.length === 1 ? safe(canvasNames[0]) : 'BlobBoard-all-' + day) + EXT;
 }
+
+// ---- files without a password (owner 2026-10-26: a password is optional) ----
+// The same contents as plain JSON text — "Save to file" without a password
+// (.blobboard) and "Export JSON" (.json). Opening works for both.
+export function plainFile(payload) {
+  return new Blob([JSON.stringify(payload)], { type: 'application/json' });
+}
+
+// What a picked file is: { kind: 'locked' } (needs a password),
+// { kind: 'plain', payload }, or { kind: 'unknown' }.
+export function sniffFile(buf) {
+  const u = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  if (isBackupFile(u)) return { kind: 'locked' };
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(u));
+    if (payload && payload.app === 'BlobBoard') return { kind: 'plain', payload };
+  } catch (_) { /* not JSON */ }
+  return { kind: 'unknown' };
+}
+
+// "Life.blobboard" -> "Life" (for copies and exports).
+export const baseName = name => String(name || 'BlobBoard').replace(/\.(blobboard|json)$/i, '');

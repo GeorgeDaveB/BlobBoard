@@ -1,5 +1,7 @@
-// End-to-end encryption of everything synced to Dropbox (phase 8, owner
-// 2026-10-22). A sync passphrase -> key (PBKDF2-SHA-256, 600 000 rounds,
+// The optional sync password (phase 8; owner 2026-10-22, made optional
+// 2026-10-26). vault.json in the cloud folder says which way the folder is
+// kept: { mode: 'plain' } (no password: files are compressed JSON) or a
+// password folder (no mode, v1): a sync password -> key (PBKDF2-SHA-256, 600 000 rounds,
 // random salt) -> each file is AES-256-GCM with its own random IV. Dropbox
 // only ever stores scrambled bytes. `vault.json` (salt + an encrypted check
 // value) lets a second device verify the passphrase. The key is kept on the
@@ -36,23 +38,32 @@ export async function open(key, bytes) {
 const gz = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
 const canGzip = () => typeof CompressionStream === 'function';
 
-// JSON <-> sealed bytes (gzipped first; first byte says how: 1 = gzip, 0 = plain).
-export async function sealJson(key, obj) {
+// JSON <-> bytes: compressed when the browser can (first byte says how:
+// 1 = gzip, 0 = as is); with a key also locked (sealJson / openJson).
+export async function packJson(obj) {
   let bytes = enc.encode(JSON.stringify(obj));
   const z = canGzip();
   if (z) bytes = await gz(bytes, new CompressionStream('gzip'));
   const body = new Uint8Array(bytes.length + 1);
   body[0] = z ? 1 : 0;
   body.set(bytes, 1);
-  return seal(key, body);
+  return body;
 }
-
-export async function openJson(key, sealed) {
-  const body = await open(key, sealed);
+export async function unpackJson(body) {
   let bytes = body.subarray(1);
   if (body[0] === 1) bytes = await gz(bytes, new DecompressionStream('gzip'));
   return JSON.parse(dec.decode(bytes));
 }
+export async function sealJson(key, obj) { return seal(key, await packJson(obj)); }
+export async function openJson(key, sealed) { return unpackJson(await open(key, sealed)); }
+
+// What sync uses: key = null means a folder without a password.
+export const encodeJson = (key, obj) => (key ? sealJson(key, obj) : packJson(obj));
+export const decodeJson = (key, bytes) => (key ? openJson(key, bytes) : unpackJson(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)));
+
+// vault.json for a folder without a password.
+export const plainVault = () => ({ app: 'SlimeGate', v: 2, mode: 'plain' });
+export const vaultMode = file => (file && file.mode === 'plain' ? 'plain' : 'password');
 
 // A new vault for a passphrase: { file (to upload as vault.json), key }.
 export async function createVault(passphrase, { iterations = VAULT_ITERATIONS } = {}) {

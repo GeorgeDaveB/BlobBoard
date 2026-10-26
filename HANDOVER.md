@@ -1,6 +1,6 @@
 # BlobBoard — Handover
 
-*Last updated: 2026-10-22 · version **2026-10-22a** (phase 8) · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
+*Last updated: 2026-10-26 · version **2026-10-26a** (passwords optional) · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
 
 BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas that you group, reorder, connect with lines and (later) tag. It is a PWA (installable web app) for Windows and Android, plain HTML/CSS/JS with **no build step and no dependencies**, hosted on GitHub Pages. Dropbox sync is planned (phase 8).
 
@@ -56,7 +56,7 @@ BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas tha
 | 8 | Dropbox sync (SlimeGate app, PKCE, encrypted files, 3-way merge, status pill, one-window lock) | ✅ 2026-10-22 — **owner to sign in + test on 2 devices** |
 | 9 | PWA polish (service worker, icons, install, offline) | planned |
 
-Tests: **163 passing** locally (2026-10-22).
+Tests: **166 passing** locally (2026-10-26).
 
 **Important limitations right now (tell anyone taking over):**
 - **Data lives only on each device** (IndexedDB per browser). PC and phone are NOT synced yet; there is no export yet. Clearing site data deletes the boards. Phases 7–8 fix this.
@@ -127,6 +127,7 @@ Tests: **163 passing** locally (2026-10-22).
 | 2026-10-12 | **Phase 6 built** with the owner's defaults (DESIGN R3/R20 "as built"); deviation from C12: items copied to *another* canvas land to the right of its content (not the middle) so they never overlap things you can't see; "Go there" in the toast | Defaults agreed 2026-10-12 |
 | 2026-10-12 | **Phase 7 built**: encrypted `.blobboard` save (PBKDF2-SHA-256 600k → AES-256-GCM, gzip, pictures + used tags inside; this canvas / all), Open (new canvases, tags by name, pictures by fingerprint, untrusted input checked), Export picture (PNG from the data, 2×, Share on phones). No plain JSON export (the encrypted save replaces it) | Owner request 2026-10-12 |
 | 2026-10-22 | **Phase 8 built**: Dropbox (owner chose it over Google Drive: Drive needs a server for lasting sign-in — draw.io uses one — or hourly reconnects). App "SlimeGate", key in `js/config.js`. Owner asked for **encrypted Dropbox files** → sync passphrase + vault (see DESIGN §11 "as built"). Defaults: first connection keeps everything, canvas delete applies to both devices, 20 backups, device "PC"/"Phone" | Owner Q&A 2026-10-22 |
+| 2026-10-26 | **Passwords optional** (owner): save files default to no password (plain JSON `.blobboard`), optional password; **Export JSON**; **Change file password…** (copy with none / new); sync: choose No password / sync password at first connect, Add / Change / Remove later (all files rewritten; other devices follow). Wording: "password", "cloud" (provider may change later; sync takes any storage API) | Owner request 2026-10-26 |
 | 2026-10-11 | "Pyramid" shown as **Top down** (code id stays `pyramid`); one-line description of Bouncing at the top of its menu; ⚙ Settings on phones = **half the screen** (`.settings-sheet` max-height 50dvh; editors unchanged) | Owner request |
 
 ---
@@ -168,12 +169,12 @@ Tests: **163 passing** locally (2026-10-22).
 | `js/config.js` | Dropbox App key + app name (public, not secrets) |
 | `js/sync/dropboxAuth.js` | PKCE sign-in: `connect`, `handleRedirect`, `getToken` (refresh), `disconnect`; tokens in setting `dropbox` |
 | `js/sync/dropboxApi.js` | `upload` (add / overwrite / update-if-rev), `download`, `listFolder`, `remove`, `latestCursor`, `longpoll`; `DropboxError.kind`; retries |
-| `js/sync/vault.js` | sync encryption: `createVault`, `unlockVault`, `seal/open`, `sealJson/openJson` |
+| `js/sync/vault.js` | optional sync password: `createVault`, `unlockVault`, `plainVault`, `vaultMode`, `encodeJson/decodeJson` (key null = no password), `seal/open` |
 | `js/sync/merge.js` | 3-way merge (pure): `mergeCanvas`, `mergeTags`, `mergeRecord`, `mergeSet` |
 | `js/sync/syncEngine.js` | one sync cycle (tags → pictures up → canvases → pictures down), conflict backups, first connection; meta in setting `sync` |
-| `js/sync/syncController.js` | when to sync (2 s after edits, long-poll, 60 s, on focus/online), passphrase setup/unlock/start over, disconnect |
+| `js/sync/syncController.js` | when to sync (2 s after edits, long-poll, 60 s, on focus/online); folder mode (no password / sync password): `createFolder`, `join`, `unlock`, `setPassword` (add/change/remove = rewrite all files), `startOver`, `disconnect`; `api` can be any cloud storage |
 | `js/ui/syncPanel.js · windowLock.js` | ⚙ Sync tab + status pills; one window at a time |
-| `js/ui/saveFiles.js` | phase 7: `saveEncrypted`, `openSaved`, `exportPicture`, `deliverFile` (Share on phones / download) |
+| `js/ui/saveFiles.js` | phase 7: `saveToFile` (no password / password), `openSaved` (.blobboard locked or plain, .json), `changeFilePassword`, `exportJson`, `exportPicture`, `deliverFile` (Share on phones / download) |
 | `js/ui/canvasMenu.js` | phase 6: `createCanvasMenu` (switcher + New/Rename/Duplicate/Delete; `extra` actions for phase 7), `copyOrMoveItems` (Duplicate/Move to canvas…) |
 | `js/ui/tagPicker.js` | phase 5: `createTagField` (editor), `createTagManager` (⚙ Tags), `createFilterMenu` (top bar) |
 | `js/ui/imageLibrary.js` | `openPicturePicker` (editor), `createLibraryGrid` (also ⚙ Pictures), `addPicturesButton` |
@@ -186,7 +187,7 @@ Tests: **163 passing** locally (2026-10-22).
 - Pictures (IndexedDB `images`, phase 4): `{ id, blob (WebP), w, h, bytes, createdAt, deleted? }`; items point at them with `thumbId`. Cards are drawn when `settings.thumbnails` is on and the picture is on this device (`board.picOf`, passed to `updateItemEl` and trays as `ctx.picOf`).
 - Item kinds (R37/R38): `kind` = 'blob' (default; old items have none) | 'shape' (+ `shape`, `w`, `h`) | 'text' (content in `notesHtml`/`notes`, `color` = text colour). `model.kindOf`, `canMoveInto` (non-blobs never nest), `linkProblem` ('text'). `itemView.updateShapeOrText` draws them; `board` handles taps (selected text → type in place, selected shape → editor), resize (`gestures` mode 'resize' on `.shape-handle`), and refuses nesting; `formationPanel` leaves text out.
 - Tags (IndexedDB `tags`, phase 5; shared by all canvases): `{ id ('t-…'), name, color, createdAt, updatedAt, deleted? }`, held in the store (`store.tags()`, `tag(id)`); items carry `tagIds`. Name matching = `model.foldText` (no case/accents, ς→σ). Filter = screen state `store.ui.filter = { tagIds, all }`; `model.filterMatches` gives the bright set (matches + their ancestors), `board` fades the rest (`.item.faded`, lines via `linksLayer({ faded })`).
-- Sync (phase 8, device settings): `dropbox` (tokens — never read them when debugging), `syncKey` (non-extractable CryptoKey), `syncVaultRev`, `sync` ({ canvases: { id: { rev, base } }, tags: { rev, base }, firstDone }). Store hooks: `putCanvasFromSync`, `removeCanvasFromSync`, `allTags`, `setTagsFromSync`, `remapTagIds` (events carry `remote: true`).
+- Sync (phase 8, device settings): `dropbox` (tokens — never read them when debugging), `syncKey` (non-extractable CryptoKey, only with a sync password), `syncMode` ('plain' | 'password'), `syncVaultRev`, `sync` ({ canvases: { id: { rev, base } }, tags: { rev, base }, firstDone }). Store hooks: `putCanvasFromSync`, `removeCanvasFromSync`, `allTags`, `setTagsFromSync`, `remapTagIds` (events carry `remote: true`).
 - Device settings (IndexedDB `settings`, never synced): `lastCanvasId`, `view:<canvasId>:root`, `mode` ('pan'|'select'), `motion` (R33 switches), `filter:<canvasId>` (tag filter).
 - Store actions: `select`, `selectLink`, `selectMany`, `toggleSelected`, `selectedItems`, `setExpanded`, `expandTo`, `toggleExpand`, `setCanvasSetting(key, value, {coalesce})`, `reorderItem`, `createItem`, `updateItem`, `moveItem`, `moveItems`, `reparentItem`, `reparentItems`, `deleteItem`, `deleteItems`, `pictureUses`, `clearPicture(id, {coalesce})`, `canvasList`, `switchCanvas`, `createCanvas`, `renameCanvas`, `duplicateCanvas`, `deleteCanvas`, `copyItemsTo(ids, canvasId, {move, coalesce})`, `importCanvas(doc, {tagMap})`, `ensureTag(name)`, `updateTag(id, {name, color})` → '' | 'exists' | 'empty', `tagUses`, `deleteTag(id, {coalesce})`, `restoreTag`, `setFilter({tagIds, all})`, `releaseChildren`, `dissolveItems`, `applyFormation(moves, links)`, `undoStep(key)`, `createLink`, `toggleArrow`, `updateLink`, `resetLineLooks`, `deleteLink`, `undo`, `redo` (+ getters `canvas`, `item`, `link`, `canUndo`, `canRedo`).
 - Flow: `ui event → store action → commit()` → (1) JSON snapshot onto the per-canvas undo stack (same `coalesce` key = same step, e.g. one editor session or one slider drag), (2) `repo.saveCanvas`, (3) `fixUi()` repairs screen state, (4) `emit` → `app.js` renders board + chrome. Undo/redo replace the whole doc and emit `history: true`.
@@ -278,7 +279,7 @@ python -m http.server 8000
 
 - **Owner to check on the phone:** lines (drawing, tapping, editor), multi-select box, rich-text toolbar, Motion → Light feel and speed, Bouncing (all three) + Release / Dissolve, pictures (add from gallery + camera, cards, Show pictures switch, footer), tags (typing on the phone keyboard, chips, filter menu, ⚙ Tags), shapes (+ menu, resize handles with a finger), free text (typing in place), canvases (footer menu, switching, duplicate/move to canvas), save to file → move it to the other device → open (password), export picture → Share.
 - **R34 later:** more royalty formations reusing `pickBlob` + `ringLayout`; "+ lines" for Pyramid; adding minis to a selection on a phone.
-- **Owner to test sync:** PC: ⚙ → Sync → Connect Dropbox → sign in → choose passphrase. Phone: same → type the passphrase. Then: edit on one, see it on the other; offline edit on the phone then reconnect; clashing edits on the same item; delete a canvas on one.
+- **Owner to test sync:** PC: ⚙ → Sync → Connect Dropbox → sign in → No password (or a sync password). Phone: same (types the sync password if there is one). Then: edit on one, see it on the other; offline edit on the phone then reconnect; clashing edits on the same item; delete a canvas on one.
 - **Phase 9 (ask first):** app polish (icon, offline, update prompt). Later: change sync passphrase; Dropbox production status if > 50 users.
 - **Not built (possible later):** auto-pan while drawing a line near the screen edge; lines between inside items; add/remove single blobs to a selection on a phone; "connect all selected"; rich text in line labels.
 - **Parked:** inside boards / sub-canvases; Background Sync.

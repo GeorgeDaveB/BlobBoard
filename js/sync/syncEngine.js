@@ -12,9 +12,10 @@
 //   4. pictures        — download the ones our canvases use that we lack
 // What "the last agreed version" (base) and Dropbox revision of each file
 // are is remembered on this device (setting 'sync'). A canvas is "edited
-// here" when it differs from its base.
+// here" when it differs from its base. getKey() gives the folder's key, or
+// null when the folder has no password (files are then just compressed).
 import { mergeCanvas, mergeTags } from './merge.js';
-import { sealJson, openJson } from './vault.js';
+import { encodeJson as sealJson, decodeJson as openJson } from './vault.js';
 import { toBase64, fromBase64 } from '../services/backup.js';
 import { foldText } from '../core/model.js';
 
