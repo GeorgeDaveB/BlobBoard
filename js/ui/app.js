@@ -3,12 +3,13 @@
 // instead of leaving the app).
 import { createBoard } from './board.js';
 import { createEditSheet, newSessionKey } from './editSheet.js';
-import { initDialogs, toast, choiceDialog } from './dialogs.js';
+import { initDialogs, toast, choiceDialog, confirmDialog } from './dialogs.js';
 import { createFormationUI, MIN_SELECTED } from './formationPanel.js';
 import { ringLayout } from '../services/formations.js';
 import { createFilterMenu } from './tagPicker.js';
 import { createCanvasMenu, copyOrMoveItems } from './canvasMenu.js';
-import { saveToFile, openSaved, changeFilePassword, exportJson, exportPicture } from './saveFiles.js';
+import { saveThisCanvas, saveAllCanvases, openSaved, exportJson, exportPicture, askNewPassword } from './saveFiles.js';
+import { makeLock } from '../services/canvasLock.js';
 import { createSyncController } from '../sync/syncController.js';
 import { createSyncPanel, createSyncPill } from './syncPanel.js';
 import { SHAPES, SHAPE_IDS, shapePath } from '../services/shapes.js';
@@ -34,7 +35,7 @@ const ICONS = {
 
 const WIDE = '(min-width: 760px)';
 
-export function mountApp({ root, store, repo, pictures = null }) {
+export function mountApp({ root, store, repo, pictures = null, keys = null }) {
   // ---- layout -------------------------------------------------------------
   const top = document.createElement('header');
   top.className = 'topbar';
@@ -234,7 +235,7 @@ export function mountApp({ root, store, repo, pictures = null }) {
   const device = matchMedia('(pointer: coarse)').matches ? 'Phone' : 'PC';
   let syncPanel = null;
   const sync = createSyncController({
-    repo, store, pictures, device,
+    repo, store, pictures, device, keys,
     isBusy: () => board.busy || editor.isOpen || lineSheet.isOpen,
     onChange: s => { pillTop.update(s); pillFoot.update(s); if (syncPanel) syncPanel.update(s); },
     onNotice: msg => toast(msg, { ms: 9000 })
@@ -542,15 +543,44 @@ export function mountApp({ root, store, repo, pictures = null }) {
   if (pictures) pictures.on(() => { board.render(); if (editor.isOpen) editor.refresh(); });
 
   // ---- canvases (phase 6) -----------------------------------------------------------
-  const canvasMenu = createCanvasMenu({ root, store, extra: () => (canvasExtras ? canvasExtras() : []) });
-  // Phase 7: the app's encrypted save file, opening one, and a PNG.
-  let canvasExtras = () => [
-    { label: 'Save to file…', run: () => saveToFile({ store, pictures }) },
-    { label: 'Open saved file…', run: () => openSaved({ store, pictures }) },
-    { label: 'Change file password…', run: () => changeFilePassword() },
-    { label: 'Export JSON', run: () => exportJson({ store, pictures }) },
-    { label: 'Export picture', run: () => exportPicture({ store, board }) }
-  ];
+  // Submenus (owner 2026-10-26): Save & export ▸ and Password ▸ (the
+  // canvas you have loaded).
+  const canvasMenu = createCanvasMenu({ root, store, keys, groups: () => [
+    { label: 'Save & export', items: [
+      { label: 'Save this canvas', run: () => saveThisCanvas({ store, pictures, keys }) },
+      { label: 'Save all canvases\u2026', run: () => saveAllCanvases({ store, pictures, keys }) },
+      { label: 'Open saved file\u2026', run: () => openSaved({ store, pictures, keys }) },
+      { label: 'Export JSON', run: () => exportJson({ store, pictures, keys }) },
+      { label: 'Export picture', run: () => exportPicture({ store, board }) }
+    ] },
+    { label: 'Password', items: store.canvas().lock
+      ? [{ label: 'Change password\u2026', run: () => setPassword(true) }, { label: 'Remove password\u2026', run: removePassword, danger: true }]
+      : [{ label: 'Add password\u2026', run: () => setPassword(false) }] }
+  ] });
+
+  // Canvas password (owner 2026-10-26): protects this canvas's save files,
+  // exports and cloud copy; this device keeps its key.
+  async function setPassword(change) {
+    const doc = store.canvas();
+    const pw = await askNewPassword(
+      (change ? 'New password for \u201c' : 'Add a password to \u201c') + doc.name + '\u201d',
+      'It protects this canvas\u2019s save files, exports and cloud copy. It can\u2019t be recovered \u2014 keep it safe.');
+    if (!pw) return;
+    const close = toast('Setting the password\u2026', { ms: 60000 });
+    const { lock, key } = await makeLock(pw);
+    close();
+    if (keys) keys.set(doc.id, key);
+    store.setCanvasLock(doc.id, lock);
+    toast(change ? 'Password changed' : 'Password added \u2014 your other devices ask for it once');
+  }
+  async function removePassword() {
+    const doc = store.canvas();
+    const ok = await confirmDialog({ title: 'Remove the password of \u201c' + doc.name + '\u201d?', message: 'Its save files and cloud copy won\u2019t need a password any more.', okLabel: 'Remove password' });
+    if (!ok) return;
+    store.setCanvasLock(doc.id, null);
+    if (keys) keys.delete(doc.id);
+    toast('Password removed');
+  }
   name.addEventListener('click', () => canvasMenu.open(name));
   footName.addEventListener('click', () => canvasMenu.open(footName));
   selCanvas.addEventListener('click', () => copyOrMoveItems(store, store.ui.selectedIds, copied));
@@ -602,7 +632,7 @@ export function mountApp({ root, store, repo, pictures = null }) {
 
   // Sync: finish a Dropbox sign-in we just came back from, or resume.
   sync.init().then(back => {
-    if (back === 'connected') { openSettings('sync'); syncPanel.setUp(); }
+    if (back === 'connected') { openSettings('sync'); toast('Connected — syncing'); }
     else if (back === 'denied') toast('Dropbox connection cancelled');
     else if (back === 'failed') toast('Dropbox sign-in didn\u2019t finish \u2014 try Connect again');
   }).catch(err => console.error('Sync start failed', err));

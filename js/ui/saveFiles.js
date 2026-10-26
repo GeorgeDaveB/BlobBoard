@@ -1,20 +1,23 @@
-// Phase 7 (R4 + owner 2026-10-12, 2026-10-26), from the canvas menu:
-//  - Save to file…        this canvas or all -> ".blobboard", no password by
-//                         default or with one; pictures included.
-//  - Open saved file…     .blobboard (with or without a password) or .json;
-//                         adds its canvases as NEW canvases (tags matched by
-//                         name, pictures by fingerprint).
-//  - Change file password… a copy without a password, or with a new one.
-//  - Export JSON          the same contents as readable .json.
-//  - Export picture     a PNG of the board you're looking at (2x), groups
-//    shown closed (C11); Share on phones that support it.
-import { encryptJson, decryptFile, buildPayload, readPayload, backupName, localDay, EXT, BackupError, plainFile, sniffFile, baseName } from '../services/backup.js';
+// Save & export (phase 7; owner 2026-10-12, reworked 2026-10-26) — canvas
+// menu → "Save & export ▸". Everything works on what is loaded:
+//  - Save this canvas      -> "<name>.blobboard"; locked with the canvas's own
+//                             password if it has one (Password ▸), else plain JSON.
+//  - Save all canvases…    -> one file: No password or a password for the
+//                             file; canvases with their own password stay
+//                             locked with it inside.
+//  - Open saved file…      .blobboard (any kind) or .json -> NEW canvases
+//                             (tags by name, pictures by fingerprint); asks the
+//                             file's and each locked canvas's password.
+//  - Export JSON           readable .json (a locked canvas asks its password
+//                             first and warns).
+//  - Export picture        a PNG of the board you're looking at (2x), groups
+//                             shown closed (C11); Share on phones.
+import { encryptJson, encryptWithKey, decryptFile, buildPayload, readPayload, backupName, localDay, EXT, BackupError, plainFile, sniffFile, baseName, sealEntry, openEntry } from '../services/backup.js';
 import { drawScene } from '../services/exportPng.js';
 import { findTagByName } from '../core/model.js';
+import { unlockWith, keyFits, MIN_PASSWORD } from '../services/canvasLock.js';
 import { APP_VERSION } from '../version.js';
-import { toast, choiceDialog, promptDialog } from './dialogs.js';
-
-const MIN_PASSWORD = 6;
+import { toast, choiceDialog, promptDialog, confirmDialog } from './dialogs.js';
 
 // Download, or (phones that can) share. Returns how it went: 'shared' | 'saved' | null.
 export async function deliverFile(blob, name, { title = 'Save file' } = {}) {
@@ -51,26 +54,11 @@ function busy(text) {
   return close;
 }
 
-// Which canvases: this one or all (asked only when there are several).
-async function pickScope(store, title) {
-  if (store.canvasList().length <= 1) return [store.ui.canvasId];
-  const scope = await choiceDialog({
-    title,
-    message: 'Pictures are included.',
-    choices: [
-      { label: 'This canvas', value: 'one', kind: 'primary', note: '\u201c' + store.canvas().name + '\u201d' },
-      { label: 'All canvases', value: 'all', note: store.canvasList().length + ' canvases' }
-    ]
-  });
-  if (!scope) return null;
-  return scope === 'all' ? store.canvasList().map(c => c.id) : [store.ui.canvasId];
-}
-
-// A new file password (twice). null = cancelled.
-async function askNewPassword() {
+// A new password (twice). null = cancelled.
+export async function askNewPassword(title = 'Choose a password', message = 'It can\u2019t be recovered \u2014 keep it safe.') {
   const pw = await promptDialog({
-    title: 'Choose a password',
-    message: 'You need it to open the file. It can\u2019t be recovered \u2014 keep it safe.',
+    title,
+    message,
     okLabel: 'Next',
     input: { type: 'password', placeholder: 'At least ' + MIN_PASSWORD + ' characters', autocomplete: 'new-password' },
     check: v => (v.length >= MIN_PASSWORD ? '' : 'Use at least ' + MIN_PASSWORD + ' characters')
@@ -80,58 +68,127 @@ async function askNewPassword() {
   return again == null ? null : pw;
 }
 
-// No password (default) or with one. Resolves null (none), a string, or undefined (cancelled).
-async function askFilePassword(title) {
-  const how = await choiceDialog({
-    title,
-    choices: [
-      { label: 'No password', value: 'none', kind: 'primary', note: 'Opens anywhere BlobBoard runs' },
-      { label: 'With a password\u2026', value: 'pw', note: 'Only opens with the password' }
-    ]
-  });
-  if (!how) return undefined;
-  if (how === 'none') return null;
-  const pw = await askNewPassword();
-  return pw == null ? undefined : pw;
+// Asks a canvas's password until it fits its lock. Resolves the key, or
+// null (cancelled).
+export async function askCanvasPassword(name, lock, message = 'Type the password of this canvas.') {
+  for (;;) {
+    const pw = await promptDialog({ title: 'Password for \u201c' + name + '\u201d', message, okLabel: 'OK', input: { type: 'password', autocomplete: 'current-password' } });
+    if (pw == null) return null;
+    const key = await unlockWith(lock, pw);
+    if (key) return key;
+    message = 'Wrong password \u2014 try again.';
+  }
 }
 
-const payloadOf = (store, pictures, ids) => buildPayload({ canvases: ids.map(id => store.canvas(id)), tags: store.tags(), pictureBlob: id => (pictures ? pictures.blobOf(id) : null), appVersion: APP_VERSION });
+// The key of a locked canvas on this device (asked if this device lacks it
+// or it no longer fits). null = no lock; undefined = cancelled.
+async function keyFor(store, keys, id) {
+  const doc = store.canvas(id);
+  if (!doc.lock) return null;
+  const k = keys && keys.get(id);
+  if (k && await keyFits(doc.lock, k)) return k;
+  const key = await askCanvasPassword(doc.name, doc.lock);
+  if (!key) return undefined;
+  if (keys) keys.set(id, key);
+  return key;
+}
+
+const pictureBlobOf = pictures => id => (pictures ? pictures.blobOf(id) : null);
+const payloadOf = (store, pictures, ids) => buildPayload({ canvases: ids.map(id => store.canvas(id)), tags: store.tags(), pictureBlob: pictureBlobOf(pictures), appVersion: APP_VERSION });
 const kb = blob => Math.max(1, Math.round(blob.size / 1024)) + ' KB';
 
-// Save to file (.blobboard): no password by default, or with one.
-export async function saveToFile({ store, pictures }) {
-  const ids = await pickScope(store, 'Save to a file');
-  if (!ids) return;
-  const pw = await askFilePassword('Save \u2014 protect the file with a password?');
-  if (pw === undefined) return;
-  const done = busy(pw ? 'Locking the file\u2026' : 'Making the file\u2026');
+// Save this canvas: with its own password if it has one.
+export async function saveThisCanvas({ store, pictures, keys }) {
+  const doc = store.canvas();
+  const key = await keyFor(store, keys, doc.id);
+  if (key === undefined) return;
+  const done = busy(key ? 'Locking the file\u2026' : 'Making the file\u2026');
   let blob;
   try {
-    const payload = await payloadOf(store, pictures, ids);
-    blob = pw ? await encryptJson(payload, pw) : plainFile(payload);
-  } catch (err) {
-    done();
-    toast('Could not save: ' + (err && err.message ? err.message : err));
-    return;
-  }
+    const payload = await payloadOf(store, pictures, [doc.id]);
+    blob = key ? await encryptWithKey(payload, key, doc.lock.kdf) : plainFile(payload);
+  } catch (err) { done(); toast('Could not save: ' + (err && err.message ? err.message : err)); return; }
   done();
-  const how = await deliverFile(blob, backupName(ids.map(id => store.canvas(id).name)), { title: 'Save the file' });
-  if (how) toast(how === 'shared' ? 'File shared' : 'File saved (' + kb(blob) + (pw ? ', with a password)' : ')'));
+  const how = await deliverFile(blob, backupName([doc.name]), { title: 'Save this canvas' });
+  if (how) toast((how === 'shared' ? 'File shared' : 'File saved') + ' (' + kb(blob) + (key ? ', with the canvas password)' : ')'));
 }
 
-// Export JSON (.json): the same contents as readable JSON, never a password.
-export async function exportJson({ store, pictures }) {
-  const ids = await pickScope(store, 'Export JSON');
-  if (!ids) return;
-  const blob = plainFile(await payloadOf(store, pictures, ids));
+// Save all canvases: one file, with or without a file password; canvases
+// with their own password stay locked with it inside.
+export async function saveAllCanvases({ store, pictures, keys }) {
+  const list = store.canvasList();
+  const how = await choiceDialog({
+    title: 'Save all ' + list.length + ' canvases',
+    message: 'Pictures are included. Canvases with their own password stay locked with it.',
+    choices: [
+      { label: 'No password', value: 'none', kind: 'primary', note: 'Opens anywhere BlobBoard runs' },
+      { label: 'With a password for this file\u2026', value: 'pw', note: 'Only opens with the password' }
+    ]
+  });
+  if (!how) return;
+  let filePw = null;
+  if (how === 'pw') { filePw = await askNewPassword('Password for this file'); if (!filePw) return; }
+  const plainIds = [], lockedIds = [];
+  for (const c of list) (store.canvas(c.id).lock ? lockedIds : plainIds).push(c.id);
+  const lockedKeys = new Map();
+  for (const id of lockedIds) {
+    const k = await keyFor(store, keys, id);
+    if (k === undefined) return;
+    lockedKeys.set(id, k);
+  }
+  const done = busy('Making the file\u2026');
+  let blob;
+  try {
+    const payload = await payloadOf(store, pictures, plainIds);
+    payload.lockedCanvases = [];
+    for (const id of lockedIds) {
+      const doc = store.canvas(id);
+      payload.lockedCanvases.push(await sealEntry(lockedKeys.get(id), doc.lock, doc.name, await payloadOf(store, pictures, [id])));
+    }
+    blob = filePw ? await encryptJson(payload, filePw) : plainFile(payload);
+  } catch (err) { done(); toast('Could not save: ' + (err && err.message ? err.message : err)); return; }
+  done();
+  const res = await deliverFile(blob, backupName(list.map(c => c.name)), { title: 'Save all canvases' });
+  if (res) toast((res === 'shared' ? 'File shared' : 'File saved') + ' (' + kb(blob) + ')');
+}
+
+// Export JSON: this canvas or all, readable by anyone (a locked canvas asks
+// its password first and you confirm).
+export async function exportJson({ store, pictures, keys }) {
+  let ids = [store.ui.canvasId];
+  if (store.canvasList().length > 1) {
+    const scope = await choiceDialog({
+      title: 'Export JSON',
+      message: 'A readable .json file, pictures included.',
+      choices: [
+        { label: 'This canvas', value: 'one', kind: 'primary', note: '\u201c' + store.canvas().name + '\u201d' },
+        { label: 'All canvases', value: 'all', note: store.canvasList().length + ' canvases' }
+      ]
+    });
+    if (!scope) return;
+    if (scope === 'all') ids = store.canvasList().map(c => c.id);
+  }
+  const locked = ids.filter(id => store.canvas(id).lock);
+  for (const id of locked) {
+    const doc = store.canvas(id);
+    const key = await askCanvasPassword(doc.name, doc.lock, 'This canvas has a password. Type it to export it.');
+    if (!key) return;
+  }
+  if (locked.length) {
+    const ok = await confirmDialog({ title: 'Export without a password?', message: 'This JSON file won\u2019t have a password \u2014 anyone with the file can read ' + (locked.length === 1 ? '\u201c' + store.canvas(locked[0]).name + '\u201d' : 'these canvases') + '.', okLabel: 'Export' });
+    if (!ok) return;
+  }
+  const payload = await payloadOf(store, pictures, ids);
+  for (const c of payload.canvases) delete c.lock;
+  const blob = plainFile(payload);
   const name = baseName(backupName(ids.map(id => store.canvas(id).name))) + '.json';
   const how = await deliverFile(blob, name, { title: 'Export JSON' });
   if (how) toast(how === 'shared' ? 'JSON shared' : 'JSON saved (' + kb(blob) + ')');
 }
 
-// Picks a .blobboard / .json file and reads it (asking its password if it
-// has one). Resolves { name, payload } or null.
-function pickAndRead(title) {
+// Picks a .blobboard / .json file and reads it (asking the file's password
+// if it has one). Resolves { name, payload, password } or null.
+function pickAndRead() {
   return new Promise(resolve => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -141,14 +198,14 @@ function pickAndRead(title) {
       if (!f) { resolve(null); return; }
       const buf = new Uint8Array(await f.arrayBuffer());
       const kind = sniffFile(buf);
-      if (kind.kind === 'plain') { resolve({ name: f.name, payload: kind.payload }); return; }
+      if (kind.kind === 'plain') { resolve({ name: f.name, payload: kind.payload, password: null }); return; }
       if (kind.kind !== 'locked') { toast('That is not a BlobBoard file'); resolve(null); return; }
       let message = 'Type the file\u2019s password.';
       for (;;) {
-        const pw = await promptDialog({ title: title + ' \u201c' + f.name + '\u201d', message, okLabel: 'Open', input: { type: 'password', autocomplete: 'current-password' } });
+        const pw = await promptDialog({ title: 'Open \u201c' + f.name + '\u201d', message, okLabel: 'Open', input: { type: 'password', autocomplete: 'current-password' } });
         if (pw == null) { resolve(null); return; }
         const done = busy('Unlocking\u2026');
-        try { const payload = await decryptFile(buf, pw); done(); resolve({ name: f.name, payload }); return; } catch (err) {
+        try { const payload = await decryptFile(buf, pw); done(); resolve({ name: f.name, payload, password: pw }); return; } catch (err) {
           done();
           if (err instanceof BackupError && err.code === 'password') { message = 'Wrong password \u2014 try again.'; continue; }
           toast(err && err.message ? err.message : 'The file could not be opened');
@@ -161,13 +218,8 @@ function pickAndRead(title) {
   });
 }
 
-// Open saved file: its canvases are added as new canvases.
-export async function openSaved({ store, pictures }) {
-  const got = await pickAndRead('Open');
-  if (!got) return;
-  let data;
-  try { data = readPayload(got.payload); } catch (err) { toast(err.message); return; }
-  // Pictures (same fingerprint = already here), then tags by name.
+// Adds a read payload's pictures, tags and canvases; returns the new canvas ids.
+async function importData(store, pictures, data) {
   if (pictures) for (const p of data.pictures) await pictures.importRecord(p);
   const tagMap = new Map();
   for (const t of data.tags) {
@@ -177,26 +229,43 @@ export async function openSaved({ store, pictures }) {
     if (isNew) store.updateTag(id, { color: t.color });
     tagMap.set(t.id, id);
   }
-  const made = data.canvases.map(doc => store.importCanvas(doc, { tagMap }));
-  if (!made.length) { toast('The file has no canvases'); return; }
-  store.switchCanvas(made[0]);
-  toast('Opened ' + made.length + ' canvas' + (made.length === 1 ? '' : 'es') + (data.skipped ? ' (' + data.skipped + ' damaged parts left out)' : ''));
+  return data.canvases.map(doc => store.importCanvas(doc, { tagMap }));
 }
 
-// Change file password: a copy of a file with no password or a new one
-// (the original file is not changed).
-export async function changeFilePassword() {
-  const got = await pickAndRead('Change password of');
+// Open saved file: its canvases are added as new canvases.
+export async function openSaved({ store, pictures, keys }) {
+  const got = await pickAndRead();
   if (!got) return;
-  try { readPayload(got.payload); } catch (err) { toast(err.message); return; }
-  const pw = await askFilePassword('New copy of \u201c' + got.name + '\u201d');
-  if (pw === undefined) return;
-  const done = busy('Making the copy\u2026');
-  let blob;
-  try { blob = pw ? await encryptJson(got.payload, pw) : plainFile(got.payload); } catch (err) { done(); toast(err.message); return; }
-  done();
-  const how = await deliverFile(blob, baseName(got.name) + EXT, { title: 'Save the copy' });
-  if (how) toast(pw ? 'Copy saved with the new password' : 'Copy saved without a password');
+  let data;
+  try { data = readPayload(got.payload); } catch (err) { toast(err.message); return; }
+  const made = await importData(store, pictures, data);
+  // A canvas saved with its own password: the password just typed is its key.
+  for (const id of made) {
+    const doc = store.canvas(id);
+    if (doc.lock && got.password && keys) { const k = await unlockWith(doc.lock, got.password); if (k) keys.set(id, k); }
+  }
+  // Canvases locked inside a multi-canvas file: ask each one's password.
+  let skipped = 0;
+  for (const entry of data.locked) {
+    let message = 'This canvas has its own password.';
+    let opened = null;
+    for (;;) {
+      const pw = await promptDialog({ title: 'Password for \u201c' + entry.name + '\u201d', message, okLabel: 'Open', input: { type: 'password', autocomplete: 'current-password' } });
+      if (pw == null) break;
+      opened = await openEntry(entry, pw).catch(() => null);
+      if (opened) break;
+      message = 'Wrong password \u2014 try again (Cancel skips this canvas).';
+    }
+    if (!opened) { skipped++; continue; }
+    let sub;
+    try { sub = readPayload(opened.payload); } catch (_) { skipped++; continue; }
+    const ids = await importData(store, pictures, sub);
+    for (const id of ids) if (keys) keys.set(id, opened.key);
+    made.push(...ids);
+  }
+  if (!made.length) { toast(skipped ? 'Nothing opened' : 'The file has no canvases'); return; }
+  store.switchCanvas(made[0]);
+  toast('Opened ' + made.length + ' canvas' + (made.length === 1 ? '' : 'es') + (skipped ? ' (' + skipped + ' locked one' + (skipped === 1 ? '' : 's') + ' skipped)' : '') + (data.skipped ? ' (' + data.skipped + ' damaged parts left out)' : ''));
 }
 
 export async function exportPicture({ store, board }) {

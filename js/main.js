@@ -5,6 +5,7 @@ import { newCanvas, sanitizeCanvas, sanitizeTag } from './core/model.js';
 import { mountApp } from './ui/app.js';
 import { createPictureLibrary } from './ui/pictures.js';
 import { acquireWindowLock, showLostLock } from './ui/windowLock.js';
+import { createKeyStore } from './persist/canvasKeys.js';
 
 async function boot() {
   // Phase 8: one window at a time (the other stops and says so).
@@ -41,7 +42,10 @@ async function boot() {
   // Picture library (phase 4); a broken one never stops the app.
   const pictures = await createPictureLibrary(repo, canvases).catch(err => { console.error('Pictures unavailable', err); return null; });
 
-  app = mountApp({ root: document.getElementById('app'), store, repo, pictures });
+  // Canvas passwords: the keys this device has unlocked (owner 2026-10-26).
+  const keys = await createKeyStore(repo);
+
+  app = mountApp({ root: document.getElementById('app'), store, repo, pictures, keys });
 
   // Save right away when the app is hidden or closed (phones kill background apps).
   document.addEventListener('visibilitychange', () => { if (document.hidden) repo.flush(); });

@@ -7,7 +7,7 @@
 //
 // File = "BLOBBOARD-ENC1\n" + header JSON + "\n" + encrypted bytes.
 // Header: { kdf: { name, hash, iterations, salt }, cipher: { name, iv }, gzip }.
-import { sanitizeCanvas, sanitizeTag } from '../core/model.js';
+import { sanitizeCanvas, sanitizeTag, validLock } from '../core/model.js';
 
 export const MAGIC = 'BLOBBOARD-ENC1\n';
 export const EXT = '.blobboard';
@@ -54,11 +54,24 @@ export async function encryptJson(obj, password, { iterations = ITERATIONS } = {
   const gzip = canGzip();
   if (gzip) bytes = await pipeThrough(bytes, new CompressionStream('gzip'));
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(password, salt, iterations);
+  return lockedBlob(bytes, gzip, key, { name: 'PBKDF2', hash: 'SHA-256', iterations, salt: toBase64(salt) });
+}
+
+async function lockedBlob(bytes, gzip, key, kdf) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
   const data = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
-  const header = { kdf: { name: 'PBKDF2', hash: 'SHA-256', iterations, salt: toBase64(salt) }, cipher: { name: 'AES-GCM', iv: toBase64(iv) }, gzip };
+  const header = { kdf, cipher: { name: 'AES-GCM', iv: toBase64(iv) }, gzip };
   return new Blob([MAGIC, JSON.stringify(header), '\n', data], { type: 'application/octet-stream' });
+}
+
+// A canvas's own save file (owner 2026-10-26): locked with the canvas's key,
+// so its password opens it (the header carries the canvas lock's salt).
+export async function encryptWithKey(obj, key, kdf) {
+  let bytes = enc.encode(JSON.stringify(obj));
+  const gzip = canGzip();
+  if (gzip) bytes = await pipeThrough(bytes, new CompressionStream('gzip'));
+  return lockedBlob(bytes, gzip, key, kdf);
 }
 
 // Is this (ArrayBuffer / Uint8Array) one of our encrypted files?
@@ -145,7 +158,14 @@ export function readPayload(p) {
       pictures.push({ id: raw.id, blob: new Blob([bytes], { type: raw.type }), w, h });
     } catch (_) { skipped++; }
   }
-  return { canvases, tags, pictures, skipped };
+  // Canvases kept locked with their own password inside a multi-canvas file.
+  const locked = [];
+  for (const raw of (Array.isArray(p.lockedCanvases) ? p.lockedCanvases : []).slice(0, LIMITS.canvases)) {
+    if (raw && typeof raw.name === 'string' && validLock(raw.lock) && typeof raw.sealed === 'string' && raw.sealed.length < LIMITS.fileBytes) {
+      locked.push({ name: raw.name.slice(0, 100), lock: raw.lock, sealed: raw.sealed });
+    } else skipped++;
+  }
+  return { canvases, tags, pictures, locked, skipped };
 }
 
 // File name: "Life.blobboard", or "BlobBoard-all-2026-10-12.blobboard".
@@ -182,3 +202,20 @@ export function sniffFile(buf) {
 
 // "Life.blobboard" -> "Life" (for copies and exports).
 export const baseName = name => String(name || 'BlobBoard').replace(/\.(blobboard|json)$/i, '');
+
+// ---- locked canvases inside a multi-canvas file (owner 2026-10-26) ----------
+// A canvas with its own password stays locked with it inside "Save all":
+// { name, lock, sealed } where sealed = its own payload (canvas + its tags +
+// its pictures) locked with the canvas key.
+export async function sealEntry(key, lock, name, subPayload) {
+  const { sealJson } = await import('../sync/vault.js');
+  return { name, lock, sealed: toBase64(await sealJson(key, subPayload)) };
+}
+
+// The entry's payload + key, or null if the password is wrong.
+export async function openEntry(entry, password) {
+  const { unlockVault, openJson } = await import('../sync/vault.js');
+  const key = await unlockVault(entry.lock, password);
+  if (!key) return null;
+  return { key, payload: await openJson(key, fromBase64(entry.sealed)) };
+}

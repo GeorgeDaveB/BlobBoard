@@ -240,6 +240,8 @@ export function sanitizeCanvas(doc) {
   if (!okWidth(doc.settings.lineWidth)) doc.settings.lineWidth = 1;
   doc.createdAt = num(doc.createdAt, now);
   doc.updatedAt = num(doc.updatedAt, now);
+  // Canvas password lock (salt + check value only; services/canvasLock.js).
+  if (doc.lock !== undefined && !validLock(doc.lock)) { delete doc.lock; fixes.push('lock'); }
   if (!doc.items || typeof doc.items !== 'object') doc.items = {};
   if (!doc.links || typeof doc.links !== 'object') doc.links = {};
 
@@ -445,4 +447,10 @@ export function cloneItems(src, rootIds, now = Date.now()) {
 export function outermost(canvas, ids) {
   const set = new Set(ids);
   return ids.filter(id => canvas.items[id] && !ancestorsOf(canvas, id).some(a => set.has(a)));
+}
+
+// A canvas password lock as stored on the canvas: { v, kdf: { name, hash,
+// iterations, salt }, check } — never the password.
+export function validLock(l) {
+  return !!(l && typeof l === 'object' && l.kdf && l.kdf.name === 'PBKDF2' && typeof l.kdf.salt === 'string' && typeof l.check === 'string' && l.kdf.iterations >= 10000 && l.kdf.iterations <= 10000000);
 }

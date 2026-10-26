@@ -760,3 +760,10 @@ button.tag-chip { cursor: pointer; min-height: 30px; padding: 4px 12px; font-siz
 .sync-intro { margin: 0; line-height: 1.45; }
 .sync-state { margin: 0; font-weight: 700; font-size: 15px; }
 .window-lock { z-index: 100; }
+
+/* Canvas menu submenus (owner 2026-10-26): Save & export ▸, Password ▸ */
+.canvas-subs { display: flex; flex-direction: column; padding-top: 6px; border-top: 1px solid var(--line); }
+.canvas-sub { display: flex; justify-content: space-between; }
+.canvas-back { padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); background: none; font: inherit; font-weight: 700; color: var(--ink); text-align: left; cursor: pointer; }
+.canvas-back:hover { background: rgba(0, 0, 0, .05); }
+.canvas-sublist { display: flex; flex-direction: column; padding-top: 4px; }

@@ -119,3 +119,43 @@ tests['no-password file and JSON export: plain JSON that opens; locked files are
   assertEqual(sniffFile(new TextEncoder().encode('{"app":"Other"}')).kind, 'unknown');
   assertEqual([baseName('Life.blobboard'), baseName('Life.json'), baseName('Life')], ['Life', 'Life', 'Life']);
 };
+
+// ---- passwords per canvas (owner 2026-10-26) ----
+tests['canvas password: lock holds no password; key fits; undo and duplicate keep it'] = async () => {
+  const { makeLock, unlockWith, keyFits } = await import('../js/services/canvasLock.js');
+  const { lock, key } = await makeLock('secret1', FAST);
+  assert(!JSON.stringify(lock).includes('secret1'), 'no password stored');
+  assert(await keyFits(lock, key), 'key fits');
+  assertEqual(await unlockWith(lock, 'nope!!'), null);
+  const other = await makeLock('secret2', FAST);
+  assertEqual(await keyFits(lock, other.key), false);
+  const store = setup();
+  const cid = store.ui.canvasId;
+  store.createItem({ title: 'A' });
+  store.setCanvasLock(cid, lock);
+  store.createItem({ title: 'B' });
+  store.undo();
+  store.undo();
+  assert(store.canvas().lock, 'undo keeps the password');
+  const copy = store.duplicateCanvas(cid);
+  assertEqual(store.canvas(copy).lock, lock, 'duplicate keeps it');
+  store.setCanvasLock(cid, null);
+  assertEqual(store.canvas(cid).lock, undefined);
+};
+
+tests['save this canvas: its password opens the file; locked canvases stay locked inside "save all"'] = async () => {
+  const { makeLock } = await import('../js/services/canvasLock.js');
+  const { encryptWithKey, sealEntry, openEntry } = await import('../js/services/backup.js');
+  const { lock, key } = await makeLock('canvaspw', FAST);
+  const payload = { app: 'BlobBoard', v: 1, canvases: [], tags: [], pictures: [] };
+  const file = new Uint8Array(await (await encryptWithKey(payload, key, lock.kdf)).arrayBuffer());
+  assertEqual(await decryptFile(file, 'canvaspw'), payload, 'the canvas password opens its file');
+  const sub = { app: 'BlobBoard', v: 1, canvases: [newCanvas('Diary', 1)], tags: [], pictures: [] };
+  const entry = await sealEntry(key, lock, 'Diary', sub);
+  assert(!entry.sealed.includes('Diary'), 'contents locked');
+  const all = readPayload({ app: 'BlobBoard', v: 1, canvases: [], tags: [], pictures: [], lockedCanvases: [entry, { name: 'bad' }] });
+  assertEqual([all.locked.length, all.skipped], [1, 1]);
+  assertEqual(await openEntry(all.locked[0], 'wrong!'), null);
+  const opened = await openEntry(all.locked[0], 'canvaspw');
+  assertEqual(opened.payload.canvases[0].name, 'Diary');
+};

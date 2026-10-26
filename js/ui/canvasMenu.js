@@ -1,12 +1,14 @@
 // Canvases (R3, R20; phase 6): the switcher behind the canvas name (top bar
 // on PC, footer on phones) — your canvases, then New / Rename / Duplicate /
 // Delete for the current one — and "Duplicate / move to canvas…" for items.
-// extra: [{ label, run }] more actions shown at the bottom (phase 7: save,
-// open, export picture).
+// groups(): [{ label, items: [{ label, run, danger? }] }] — submenus shown
+// under the canvas actions ("Save & export ▸", "Password ▸"); a submenu opens
+// in place with a "‹ Back" row. keys: this device's canvas keys (a duplicate
+// of a canvas with a password gets the same key).
 import { toast, confirmDialog, promptDialog, choiceDialog } from './dialogs.js';
 import { LIMITS } from '../core/model.js';
 
-export function createCanvasMenu({ root, store, extra = () => [] }) {
+export function createCanvasMenu({ root, store, groups = () => [], keys = null }) {
   const menu = document.createElement('div');
   menu.className = 'canvas-menu';
   menu.hidden = true;
@@ -34,7 +36,8 @@ export function createCanvasMenu({ root, store, extra = () => [] }) {
       b.setAttribute('role', 'menuitemradio');
       b.setAttribute('aria-checked', String(c.id === cur));
       const n = document.createElement('span');
-      n.textContent = c.name;
+      n.textContent = c.name + (c.locked ? ' \u{1F512}' : '');
+      if (c.locked) n.title = 'Has a password';
       const k = document.createElement('small');
       k.textContent = c.count + (c.count === 1 ? ' item' : ' items');
       b.append(n, k);
@@ -49,11 +52,33 @@ export function createCanvasMenu({ root, store, extra = () => [] }) {
       button('Duplicate', duplicate),
       button('Delete', remove, 'danger')
     );
-    const more = extra();
-    const moreBox = document.createElement('div');
-    moreBox.className = 'canvas-acts';
-    for (const m of more) moreBox.append(button(m.label, m.run));
-    menu.replaceChildren(list, acts, ...(more.length ? [moreBox] : []));
+    const subs = groups();
+    const subBox = document.createElement('div');
+    subBox.className = 'canvas-subs';
+    for (const g of subs) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'canvas-act canvas-sub';
+      b.textContent = g.label + ' \u25B8';
+      b.setAttribute('aria-haspopup', 'menu');
+      b.addEventListener('click', () => paintSub(g));
+      subBox.append(b);
+    }
+    menu.replaceChildren(list, acts, ...(subs.length ? [subBox] : []));
+  }
+
+  // A submenu in place of the main one.
+  function paintSub(g) {
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'canvas-back';
+    head.textContent = '\u2039 ' + g.label;
+    head.addEventListener('click', () => { paint(); place(); });
+    const box = document.createElement('div');
+    box.className = 'canvas-sublist';
+    for (const it of g.items) box.append(button(it.label, it.run, it.danger ? 'danger' : ''));
+    menu.replaceChildren(head, box);
+    place();
   }
 
   async function newCanvas() {
@@ -68,7 +93,9 @@ export function createCanvasMenu({ root, store, extra = () => [] }) {
     if (store.renameCanvas(doc.id, name)) toast('Renamed', { actionLabel: 'Undo', onAction: () => store.undo() });
   }
   function duplicate() {
-    const id = store.duplicateCanvas(store.ui.canvasId);
+    const src = store.ui.canvasId;
+    const id = store.duplicateCanvas(src);
+    if (id && keys && keys.get(src)) keys.set(id, keys.get(src));
     if (id) { store.switchCanvas(id); toast('Duplicated — you are on the copy'); }
   }
   async function remove() {

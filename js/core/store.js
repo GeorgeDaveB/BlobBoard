@@ -113,6 +113,9 @@ export function createStore({ repo, now = () => Date.now() }) {
 
   function replaceDoc(canvasId, json) {
     const doc = JSON.parse(json);
+    // Undo / redo never add, remove or change a canvas password.
+    const cur = canvases.get(canvasId);
+    if (cur && cur.lock) doc.lock = cur.lock; else delete doc.lock;
     canvases.set(canvasId, doc);
     repo.saveCanvas(doc);
     fixUi();
@@ -431,7 +434,7 @@ export function createStore({ repo, now = () => Date.now() }) {
     canvasList() {
       return [...canvases.values()]
         .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
-        .map(d => ({ id: d.id, name: d.name, count: Object.keys(d.items).length }));
+        .map(d => ({ id: d.id, name: d.name, count: Object.keys(d.items).length, locked: !!d.lock }));
     },
 
     // Shows another canvas: fresh screen state; its own undo history stays.
@@ -469,6 +472,7 @@ export function createStore({ repo, now = () => Date.now() }) {
       const t = now();
       const doc = newCanvas(cleanCanvasName(src.name + ' (copy)'), t);
       doc.settings = JSON.parse(JSON.stringify(src.settings));
+      if (src.lock) doc.lock = JSON.parse(JSON.stringify(src.lock)); // same password (the app copies the key)
       const tops = Object.values(src.items).filter(it => it.parentId === null).map(it => it.id);
       const { items, links } = cloneItems(src, tops, t);
       for (const it of items) doc.items[it.id] = it;
@@ -485,6 +489,7 @@ export function createStore({ repo, now = () => Date.now() }) {
       const t = now();
       const doc = newCanvas(cleanCanvasName(src.name) || 'Imported canvas', t);
       doc.settings = JSON.parse(JSON.stringify(src.settings || doc.settings));
+      if (src.lock) doc.lock = JSON.parse(JSON.stringify(src.lock));
       const names = new Set([...canvases.values()].map(d => d.name));
       const base = doc.name;
       for (let k = 2; names.has(doc.name); k++) doc.name = cleanCanvasName(base + ' (' + k + ')');
@@ -500,6 +505,18 @@ export function createStore({ repo, now = () => Date.now() }) {
       repo.saveCanvas(doc);
       events.emit({ type: 'canvases' });
       return doc.id;
+    },
+
+    // Canvas password (owner 2026-10-26): sets or clears the lock (salt +
+    // check; null = no password). Not an undo step, and undo keeps it.
+    setCanvasLock(id, lock) {
+      const doc = canvases.get(id);
+      if (!doc) return false;
+      if (lock) doc.lock = JSON.parse(JSON.stringify(lock)); else delete doc.lock;
+      doc.updatedAt = now();
+      repo.saveCanvas(doc);
+      events.emit({ type: 'data', canvasId: id, lock: true });
+      return true;
     },
 
     // Final (no undo). The last canvas can't be deleted. Switches away first.

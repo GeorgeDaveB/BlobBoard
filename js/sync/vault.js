@@ -66,8 +66,8 @@ export const plainVault = () => ({ app: 'SlimeGate', v: 2, mode: 'plain' });
 export const vaultMode = file => (file && file.mode === 'plain' ? 'plain' : 'password');
 
 // A new vault for a passphrase: { file (to upload as vault.json), key }.
-export async function createVault(passphrase, { iterations = VAULT_ITERATIONS } = {}) {
-  if (String(passphrase).length < MIN_PASSPHRASE) throw new Error('Use at least ' + MIN_PASSPHRASE + ' characters');
+export async function createVault(passphrase, { iterations = VAULT_ITERATIONS, min = MIN_PASSPHRASE } = {}) {
+  if (String(passphrase).length < min) throw new Error('Use at least ' + min + ' characters');
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await derive(passphrase, salt, iterations);
   const check = await seal(key, enc.encode(CHECK));

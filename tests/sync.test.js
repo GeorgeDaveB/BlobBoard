@@ -1,6 +1,7 @@
 import { assert, assertEqual } from './runner.js';
 import { mergeSet, mergeRecord, mergeCanvas, mergeTags } from '../js/sync/merge.js';
-import { createVault, unlockVault, sealJson, openJson, encodeJson, decodeJson } from '../js/sync/vault.js';
+import { createVault, unlockVault, sealJson, openJson, packJson, unpackJson } from '../js/sync/vault.js';
+import { makeLock } from '../js/services/canvasLock.js';
 import { createSyncController } from '../js/sync/syncController.js';
 import { createSyncEngine, PATHS } from '../js/sync/syncEngine.js';
 import { apiArg } from '../js/sync/dropboxApi.js';
@@ -42,6 +43,10 @@ function fakeDropbox() {
 }
 
 const FAST = { iterations: 20000 };
+function keyStore() {
+  const m = new Map();
+  return { get: id => m.get(id) || null, has: id => m.has(id), set: (id, k) => (k ? m.set(id, k) : m.delete(id)), delete: id => m.delete(id), m };
+}
 function device(name, dbx, key, { canvasName = 'My first canvas', clock } = {}) {
   const settings = new Map();
   const repo = { saveCanvas() {}, saveTag() {}, deleteCanvas() {}, getSetting: async k => settings.get(k), setSetting: (k, v) => settings.set(k, v) };
@@ -55,8 +60,9 @@ function device(name, dbx, key, { canvasName = 'My first canvas', clock } = {}) 
     importRecord: async r => { pics.set(r.id, { blob: r.blob, w: r.w, h: r.h }); return true; }
   };
   let busy = false;
-  const engine = createSyncEngine({ api: dbx, getKey: async () => key, store, pictures, repo, device: name, now: clock, isBusy: () => busy });
-  return { store, engine, pics, settings, setBusy: b => { busy = b; } };
+  const keys = keyStore();
+  const engine = createSyncEngine({ api: dbx, keys, store, pictures, repo, device: name, now: clock, isBusy: () => busy });
+  return { store, engine, pics, settings, keys, setBusy: b => { busy = b; } };
 }
 async function twoDevices() {
   let t = 1000;
@@ -74,8 +80,9 @@ function ctrlDevice(name, dbx, clock) {
   const c = newCanvas(name + ' board', clock());
   store.load([c], c.id, []);
   const states = [];
-  const ctrl = createSyncController({ repo, store, pictures: null, device: name, api: dbx, onChange: s => states.push(s) });
-  return { store, ctrl, states, last: () => states[states.length - 1] || {} };
+  const keys = keyStore();
+  const ctrl = createSyncController({ repo, store, pictures: null, keys, device: name, api: dbx, onChange: s => states.push(s) });
+  return { store, ctrl, keys, states, last: () => states[states.length - 1] || {} };
 }
 
 export const tests = {
@@ -135,14 +142,14 @@ export const tests = {
   },
 
   // ---- two devices ----
-  'two devices: first connection — A’s canvas reaches B; B’s empty starter canvas is dropped; files encrypted': async () => {
+  'two devices: first connection — A’s canvas reaches B; B’s empty starter canvas is dropped': async () => {
     const { dbx, A, B } = await twoDevices();
     const x = A.store.createItem({ title: 'Secret plan', x: 10, y: 10 });
     await A.engine.syncNow();
     assertEqual(A.engine.status.state, 'synced');
     const path = PATHS.canvas(A.store.ui.canvasId);
     assert(dbx.files.has(path), 'uploaded');
-    assert(!new TextDecoder().decode(dbx.files.get(path).bytes).includes('Secret plan'), 'Dropbox only has scrambled bytes');
+    assertEqual((await unpackJson(dbx.files.get(path).bytes)).items[x].title, 'Secret plan', 'no password: plain JSON (compressed)');
     await B.engine.syncNow();
     assertEqual(B.store.canvasList().map(c => c.name), ['My first canvas']);
     assertEqual(B.store.canvas(A.store.ui.canvasId).items[x].title, 'Secret plan');
@@ -221,7 +228,7 @@ export const tests = {
     assert(tb !== ta);
   },
 
-  'two devices: pictures travel (encrypted); waits while you are busy': async () => {
+  'two devices: pictures travel; waits while you are busy': async () => {
     const { dbx, A, B } = await twoDevices();
     const pid = 'p-' + 'b'.repeat(64);
     A.pics.set(pid, { blob: new Blob([new Uint8Array([7, 7, 7])], { type: 'image/webp' }), w: 4, h: 3 });
@@ -243,49 +250,93 @@ export const tests = {
   }
 };
 
-// ---- sync password optional (owner 2026-10-26) ----
-tests['no password: files are just compressed JSON; with a key they are locked'] = async () => {
-  const plain = await encodeJson(null, { a: 'Γεια' });
-  assertEqual(await decodeJson(null, plain), { a: 'Γεια' });
-  const { key } = await createVault('long enough pw', FAST);
-  const locked = await encodeJson(key, { a: 1 });
-  let threw = false;
-  try { await decodeJson(null, locked); } catch (_) { threw = true; }
-  assert(threw, 'a locked file needs the key');
+
+// ---- passwords per canvas (owner 2026-10-26) ----
+tests['canvas password: its cloud copy is locked; the other device asks once, then it syncs'] = async () => {
+  const { dbx, A, B } = await twoDevices();
+  const cid = A.store.ui.canvasId;
+  const x = A.store.createItem({ title: 'Diary entry' });
+  const { lock, key } = await makeLock('canvas pw 1', FAST);
+  A.keys.set(cid, key);
+  A.store.setCanvasLock(cid, lock);
+  await A.engine.syncNow();
+  const file = await unpackJson(dbx.files.get(PATHS.canvas(cid)).bytes);
+  assert(file.locked && file.name === 'My first canvas' && !file.sealed.includes('Diary'), 'locked in the cloud, only the name readable');
+  await B.engine.syncNow();
+  assertEqual(B.engine.status.state, 'needs');
+  assertEqual(B.engine.status.needs.map(n => n.id), [cid]);
+  assert(!B.store.canvas(cid) || !B.store.canvas(cid).items[x], 'not readable on B yet');
+  // B types the password (what the controller does).
+  const r = await B.engine.remoteLock(cid);
+  const { unlockWith } = await import('../js/services/canvasLock.js');
+  assertEqual(await unlockWith(r.lock, 'wrong pw'), null);
+  B.keys.set(cid, await unlockWith(r.lock, 'canvas pw 1'));
+  await B.engine.syncNow();
+  assertEqual([B.engine.status.state, B.store.canvas(cid).items[x].title], ['synced', 'Diary entry']);
+  // Edits keep flowing while locked.
+  B.store.switchCanvas(cid);
+  B.store.updateItem(x, { title: 'Edited on phone' });
+  await B.engine.syncNow();
+  await A.engine.syncNow();
+  assertEqual(A.store.canvas(cid).items[x].title, 'Edited on phone');
+  // A changes the password: B is asked again; A removes it: B follows by itself.
+  const next = await makeLock('canvas pw 2', FAST);
+  A.keys.set(cid, next.key);
+  A.store.setCanvasLock(cid, next.lock);
+  await A.engine.syncNow();
+  await B.engine.syncNow();
+  assertEqual(B.engine.status.state, 'needs');
+  A.store.setCanvasLock(cid, null);
+  await A.engine.syncNow();
+  await B.engine.syncNow();
+  assertEqual([B.engine.status.state, B.store.canvas(cid).lock], ['synced', undefined]);
 };
 
-tests['controller: folder without a password; add, change and remove the sync password — the other device follows'] = async () => {
+tests['canvas password: a picture only locked canvases use is locked too'] = async () => {
+  const { dbx, A, B } = await twoDevices();
+  const cid = A.store.ui.canvasId;
+  const pid = 'p-' + 'c'.repeat(64);
+  A.pics.set(pid, { blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' }), w: 2, h: 2 });
+  A.store.createItem({ title: 'P', thumbId: pid });
+  const { lock, key } = await makeLock('canvas pw 1', FAST);
+  A.keys.set(cid, key);
+  A.store.setCanvasLock(cid, lock);
+  await A.engine.syncNow();
+  const f = await unpackJson(dbx.files.get(PATHS.image(pid)).bytes);
+  assert(f.locked && !f.data, 'picture locked');
+  await B.engine.syncNow();
+  assertEqual(B.pics.has(pid), false, 'not without the password');
+  B.keys.set(cid, key);
+  await B.engine.syncNow();
+  assertEqual(B.pics.has(pid), true);
+};
+
+tests['controller: connects, lists a canvas that needs its password, unlocks it'] = async () => {
   let t = 5000;
   const clock = () => ++t;
   const dbx = fakeDropbox();
   const A = ctrlDevice('PC', dbx, clock), B = ctrlDevice('Phone', dbx, clock);
-  assertEqual(await A.ctrl.createFolder(null), 'ok');
-  assertEqual([A.ctrl.mode, A.ctrl.phase], ['plain', 'on']);
-  const x = A.store.createItem({ title: 'From PC' });
+  const cid = A.store.ui.canvasId;
+  A.store.createItem({ title: 'Secret' });
+  const { lock, key } = await makeLock('canvas pw 9', FAST);
+  A.keys.set(cid, key);
+  A.store.setCanvasLock(cid, lock);
+  A.ctrl.begin();
   await A.ctrl.syncNow();
-  assertEqual(await B.ctrl.folderMode(), 'plain');
-  assertEqual(await B.ctrl.join(), 'ok');
+  B.ctrl.begin();
   await B.ctrl.syncNow();
-  assertEqual(B.store.canvas(A.store.ui.canvasId).items[x].title, 'From PC');
-  // Add a password on A: every file rewritten, B is asked once.
-  await A.ctrl.setPassword('new password 1');
-  assertEqual(A.ctrl.mode, 'password');
-  const raw = dbx.files.get(PATHS.canvas(A.store.ui.canvasId)).bytes;
-  let readable = true;
-  try { await decodeJson(null, raw); } catch (_) { readable = false; }
-  assert(!readable, 'files are locked now');
-  await B.ctrl.syncNow();
-  assertEqual([B.ctrl.phase, B.last().state], ['setup', 'locked']);
-  assertEqual(await B.ctrl.unlock('wrong one!!'), false);
-  assertEqual(await B.ctrl.unlock('new password 1'), true);
-  A.store.updateItem(x, { title: 'Changed with a password' });
-  await A.ctrl.syncNow();
-  await B.ctrl.syncNow();
-  assertEqual(B.store.canvas(A.store.ui.canvasId).items[x].title, 'Changed with a password');
-  // Remove it again: B follows by itself.
-  await A.ctrl.setPassword(null);
-  await B.ctrl.syncNow();
-  assertEqual([B.ctrl.mode, B.ctrl.phase, B.last().state], ['plain', 'on', 'synced']);
+  assertEqual(B.last().needs.map(n => n.name), ['PC board']);
+  assertEqual(await B.ctrl.unlockCanvas(cid, 'nope nope'), false);
+  assertEqual(await B.ctrl.unlockCanvas(cid, 'canvas pw 9'), true);
+  assertEqual(B.last().state, 'synced');
+  assert(Object.values(B.store.canvas(cid).items).some(i => i.title === 'Secret'));
   A.ctrl.pause();
   B.ctrl.pause();
+};
+
+tests['an old folder with a folder-wide password asks to start over'] = async () => {
+  const { dbx, A } = await twoDevices();
+  await dbx.upload(PATHS.vault, new TextEncoder().encode(JSON.stringify({ app: 'SlimeGate', v: 1, kdf: {}, check: 'x' })), 'add');
+  await A.engine.syncNow();
+  assert(A.engine.status.state === 'error' && /Start over/.test(A.engine.status.message));
 };

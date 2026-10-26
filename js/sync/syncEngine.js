@@ -1,26 +1,33 @@
-// Dropbox sync (phase 8, DESIGN §11): keeps this device's canvases, tags
-// and pictures in step with the app folder in Dropbox. Every file there is
-// encrypted (vault.js). One run ("cycle"):
+// Cloud sync (phase 8, DESIGN §11): keeps this device's canvases, tags and
+// pictures in step with the app's cloud folder (Dropbox today). One run
+// ("cycle"):
 //   1. tags.bin        — download if it changed, 3-way merge, upload if needed
-//   2. pictures        — upload the ones our canvases use that Dropbox lacks
+//   2. pictures        — upload the ones our canvases use that the cloud lacks
 //   3. canvases/<id>.bin, one by one:
 //        only here (new) -> upload · only there (new) -> download
 //        deleted there   -> delete here (kept + re-uploaded if edited here)
 //        deleted here    -> delete there (kept if edited there)
 //        changed there   -> take it (not edited here) or 3-way merge (edited here),
-//                           upload "only if Dropbox still has what we saw"
+//                           upload "only if the cloud still has what we saw"
 //   4. pictures        — download the ones our canvases use that we lack
-// What "the last agreed version" (base) and Dropbox revision of each file
-// are is remembered on this device (setting 'sync'). A canvas is "edited
-// here" when it differs from its base. getKey() gives the folder's key, or
-// null when the folder has no password (files are then just compressed).
+// Passwords are per canvas (owner 2026-10-26): a canvas with a password is
+// kept in the cloud locked with its key ({ locked, name, lock, sealed }); one
+// without is compressed JSON. A device without the key (or with an old one,
+// after the password changed elsewhere) skips that canvas and lists it in
+// status.needs, so the UI can ask its password once (keys = this device's
+// canvas keys). Tags are never locked; a picture is locked when only
+// locked canvases use it.
+// What "the last agreed version" (base) and cloud revision of each file are
+// is remembered on this device (setting 'sync'). A canvas is "edited here"
+// when it differs from its base.
 import { mergeCanvas, mergeTags } from './merge.js';
-import { encodeJson as sealJson, decodeJson as openJson } from './vault.js';
+import { packJson, unpackJson, sealJson, openJson } from './vault.js';
 import { toBase64, fromBase64 } from '../services/backup.js';
+import { keyFits } from '../services/canvasLock.js';
 import { foldText } from '../core/model.js';
 
 export const PATHS = {
-  vault: '/vault.json',
+  vault: '/vault.json', // only from the first phase-8 build (a folder-wide password)
   tags: '/tags.bin',
   canvases: '/canvases',
   canvas: id => '/canvases/' + id + '.bin',
@@ -35,12 +42,16 @@ const clone = v => JSON.parse(JSON.stringify(v));
 const fileId = e => (e && e['.tag'] === 'file' && e.name.endsWith('.bin') ? e.name.slice(0, -4) : null);
 
 class Busy extends Error {}
+export class NeedPassword extends Error {
+  constructor(id, name, lock) { super('Needs its password'); this.id = id; this.name = name; this.lock = lock; }
+}
 
-export function createSyncEngine({ api, getKey, store, pictures = null, repo, device = 'Device', now = () => Date.now(), isBusy = () => false, onStatus = () => {}, onNotice = () => {} }) {
+export function createSyncEngine({ api, keys = null, store, pictures = null, repo, device = 'Device', now = () => Date.now(), isBusy = () => false, onStatus = () => {}, onNotice = () => {} }) {
   let meta = null;
   let running = null;
   let again = false;
-  let status = { state: 'idle', pending: 0, lastSync: 0, message: '' };
+  let needs = new Map(); // canvasId -> { id, name, lock }
+  let status = { state: 'idle', pending: 0, lastSync: 0, message: '', needs: [] };
 
   async function loadMeta() {
     if (!meta) meta = (await repo.getSetting('sync')) || null;
@@ -60,19 +71,37 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
     try { return (await api.rpc('files/get_metadata', { path })).rev || null; } catch (err) { if (err.kind === 'notfound') return null; throw err; }
   }
 
-  async function uploadJson(key, path, obj, mode) {
-    const r = await api.upload(path, await sealJson(key, obj), mode);
+  // ---- what goes into the files ---------------------------------------------------
+  async function keyOf(id, lock) {
+    const k = keys && keys.get(id);
+    return k && (await keyFits(lock, k)) ? k : null;
+  }
+  async function encodeCanvas(doc) {
+    if (!doc.lock) return packJson(doc);
+    const k = await keyOf(doc.id, doc.lock);
+    if (!k) throw new NeedPassword(doc.id, doc.name, doc.lock);
+    return packJson({ locked: 1, name: doc.name, lock: doc.lock, sealed: toBase64(await sealJson(k, doc)) });
+  }
+  async function decodeCanvas(id, bytes) {
+    const obj = await unpackJson(bytes);
+    if (!obj || !obj.locked) return obj;
+    const k = await keyOf(id, obj.lock);
+    if (!k) throw new NeedPassword(id, obj.name, obj.lock);
+    return openJson(k, fromBase64(obj.sealed));
+  }
+  async function uploadCanvas(path, doc, mode) {
+    const r = await api.upload(path, await encodeCanvas(doc), mode);
     return r.rev;
   }
 
   // ---- 1. tags ------------------------------------------------------------------------
-  async function syncTags(key) {
+  async function syncTags() {
     const rev = await getRev(PATHS.tags);
     let remote = null;
     if (rev && rev === meta.tags.rev) remote = meta.tags.base;
     else if (rev) {
       const f = await api.download(PATHS.tags);
-      remote = f ? await openJson(key, f.bytes) : null;
+      remote = f ? await unpackJson(f.bytes) : null;
     }
     const local = store.allTags();
     const byId = (a, b) => (a.id < b.id ? -1 : 1);
@@ -90,44 +119,65 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
     if (!same(merged, local)) store.setTagsFromSync(merged);
     if (remap.size) store.remapTagIds(remap);
     if (!remote || !same(merged, remote)) {
-      const newRev = await uploadJson(key, PATHS.tags, merged, rev ? { update: rev } : 'add');
-      meta.tags = { rev: newRev, base: merged };
+      const r = await api.upload(PATHS.tags, await packJson(merged), rev ? { update: rev } : 'add');
+      meta.tags = { rev: r.rev, base: merged };
     } else meta.tags = { rev, base: merged };
     saveMeta();
   }
 
   // ---- 2 + 4. pictures -------------------------------------------------------------------
-  function usedPictures() {
-    const ids = new Set();
-    for (const c of store.canvasList()) for (const it of Object.values(store.canvas(c.id).items)) if (it.thumbId) ids.add(it.thumbId);
-    return ids;
+  // Picture id -> the canvases (ids) that use it.
+  function pictureUsers() {
+    const users = new Map();
+    for (const c of store.canvasList()) {
+      for (const it of Object.values(store.canvas(c.id).items)) {
+        if (!it.thumbId) continue;
+        if (!users.has(it.thumbId)) users.set(it.thumbId, []);
+        users.get(it.thumbId).push(c.id);
+      }
+    }
+    return users;
   }
-  async function uploadPictures(key, remoteImages) {
+  async function uploadPictures(remoteImages) {
     if (!pictures) return;
-    for (const id of usedPictures()) {
+    for (const [id, users] of pictureUsers()) {
       if (remoteImages.has(id)) continue;
       const p = pictures.blobOf(id);
       if (!p) continue;
-      const data = toBase64(new Uint8Array(await p.blob.arrayBuffer()));
-      await uploadJson(key, PATHS.image(id), { w: p.w, h: p.h, type: p.blob.type || 'image/webp', data }, 'overwrite');
+      const body = { w: p.w, h: p.h, type: p.blob.type || 'image/webp', data: toBase64(new Uint8Array(await p.blob.arrayBuffer())) };
+      // Only locked canvases use it: lock it with the first one's key.
+      const lockedOnly = users.every(cid => store.canvas(cid).lock);
+      let file;
+      if (lockedOnly) {
+        const doc = store.canvas(users[0]);
+        const k = await keyOf(doc.id, doc.lock);
+        if (!k) continue; // its canvas waits for its password too
+        file = { locked: 1, canvasId: doc.id, lock: doc.lock, sealed: toBase64(await sealJson(k, body)) };
+      } else file = body;
+      await api.upload(PATHS.image(id), await packJson(file), 'overwrite');
       remoteImages.add(id);
     }
   }
-  async function downloadPictures(key, remoteImages) {
+  async function downloadPictures(remoteImages) {
     if (!pictures) return;
-    for (const id of usedPictures()) {
+    for (const id of pictureUsers().keys()) {
       if (pictures.has(id) || !remoteImages.has(id)) continue;
       const f = await api.download(PATHS.image(id));
       if (!f) continue;
-      const p = await openJson(key, f.bytes);
+      let p = await unpackJson(f.bytes);
+      if (p.locked) {
+        const k = await keyOf(p.canvasId, p.lock);
+        if (!k) continue;
+        p = await openJson(k, fromBase64(p.sealed));
+      }
       await pictures.importRecord({ id, blob: new Blob([fromBase64(p.data)], { type: p.type || 'image/webp' }), w: p.w, h: p.h });
     }
   }
 
   // ---- 3. canvases --------------------------------------------------------------------
-  async function backup(key, id, doc) {
+  async function backup(id, doc) {
     const stamp = new Date(now()).toISOString().replace(/[:.]/g, '-');
-    await uploadJson(key, PATHS.backups(id) + '/' + stamp + '-' + device + '.bin', doc, 'add').catch(() => {});
+    try { await api.upload(PATHS.backups(id) + '/' + stamp + '-' + device + '.bin', await encodeCanvas(doc), 'add'); } catch (_) { return; }
     const { entries } = await api.listFolder(PATHS.backups(id));
     const files = entries.filter(e => e['.tag'] === 'file').sort((a, b) => (a.name < b.name ? 1 : -1));
     for (const old of files.slice(KEEP_BACKUPS)) await api.remove(old.path_lower || PATHS.backups(id) + '/' + old.name).catch(() => {});
@@ -137,15 +187,15 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
     if (id === store.ui.canvasId && isBusy()) throw new Busy();
   }
 
-  async function download(key, id) {
+  async function download(id) {
     const f = await api.download(PATHS.canvas(id));
     if (!f) return null;
-    const doc = await openJson(key, f.bytes);
+    const doc = await decodeCanvas(id, f.bytes);
     doc.id = id;
     return { doc, rev: f.rev };
   }
 
-  async function syncCanvas(key, id, remoteRev) {
+  async function syncCanvas(id, remoteRev) {
     const L = store.canvas(id);
     const M = meta.canvases[id];
     const path = PATHS.canvas(id);
@@ -157,7 +207,7 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
       } else {
         if (M) onNotice('“' + L.name + '” was deleted on your other device but you changed it here, so it was kept.');
         const doc = clone(L);
-        const rev = await uploadJson(key, path, doc, 'add');
+        const rev = await uploadCanvas(path, doc, 'add');
         meta.canvases[id] = { rev, base: doc };
       }
     } else if (!L && remoteRev) {
@@ -165,20 +215,20 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
         await api.remove(path);
         delete meta.canvases[id];
       } else {
-        const r = await download(key, id);
+        const r = await download(id);
         if (!r) return;
         if (M) onNotice('“' + r.doc.name + '” was changed on your other device after you deleted it here, so it came back.');
         store.putCanvasFromSync(r.doc);
         meta.canvases[id] = { rev: r.rev || remoteRev, base: r.doc };
       }
     } else if (L && remoteRev) {
-      if (M && M.rev === remoteRev) {                  // Dropbox unchanged since we last saw it
+      if (M && M.rev === remoteRev) {                  // the cloud unchanged since we last saw it
         if (!dirtyCanvas(id)) return;
         const doc = clone(L);
-        const rev = await uploadJson(key, path, doc, { update: remoteRev });
+        const rev = await uploadCanvas(path, doc, { update: remoteRev });
         meta.canvases[id] = { rev, base: doc };
       } else {                                         // changed on the other device
-        const r = await download(key, id);
+        const r = await download(id);
         if (!r) return;
         const T = r.doc;
         if (M && !dirtyCanvas(id)) {
@@ -190,11 +240,11 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
         } else {
           const res = mergeCanvas(M ? M.base : null, clone(L), T);
           guardBusy(id);
-          if (res.losers.has('mine')) await backup(key, id, L);
-          if (res.losers.has('theirs')) await backup(key, id, T);
+          if (res.losers.has('mine')) await backup(id, L);
+          if (res.losers.has('theirs')) await backup(id, T);
           if (!same(res.doc, L)) store.putCanvasFromSync(res.doc);
           const doc = clone(store.canvas(id));
-          const rev = same(doc, T) ? (r.rev || remoteRev) : await uploadJson(key, path, doc, { update: r.rev || remoteRev });
+          const rev = same(doc, T) ? (r.rev || remoteRev) : await uploadCanvas(path, doc, { update: r.rev || remoteRev });
           meta.canvases[id] = { rev, base: doc };
         }
       }
@@ -205,44 +255,58 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
   }
 
   // First connection: canvases from both devices are kept. A never-synced
-  // canvas here that is empty and shares a name with one in Dropbox is
+  // canvas here that is empty and shares a name with one in the cloud is
   // dropped (the "My first canvas" every new device starts with); a
   // non-empty one with the same name gets "(PC)" / "(Phone)" added.
-  async function firstConnection(key, remote) {
+  async function firstConnection(remote) {
     if (meta.firstDone || !remote.size) return;
     const remoteNames = new Map();
     for (const id of remote.keys()) {
       if (store.canvas(id)) continue;
-      const r = await download(key, id);
+      let r = null;
+      try { r = await download(id); } catch (err) { if (err instanceof NeedPassword) { remoteNames.set(err.name, null); continue; } throw err; }
       if (r) remoteNames.set(r.doc.name, r);
     }
     for (const c of store.canvasList()) {
       if (meta.canvases[c.id] || remote.has(c.id) || !remoteNames.has(c.name)) continue;
-      if (c.count === 0 && store.canvasList().length > 0) {
-        const r = remoteNames.get(c.name);
+      const r = remoteNames.get(c.name);
+      if (c.count === 0 && r) {
         store.putCanvasFromSync(r.doc);
         meta.canvases[r.doc.id] = { rev: r.rev, base: r.doc };
         store.removeCanvasFromSync(c.id);
-      } else {
+      } else if (c.count > 0) {
         store.renameCanvas(c.id, c.name + ' (' + device + ')');
       }
     }
   }
 
   async function cycle() {
-    const key = await getKey();
     await loadMeta();
     setStatus({ state: 'syncing', message: '' });
+    // A folder from the first phase-8 build (one password for everything)
+    // can't be read any more: only Start over helps.
+    const old = await api.download(PATHS.vault).catch(() => null);
+    if (old) {
+      let v = null;
+      try { v = JSON.parse(new TextDecoder().decode(old.bytes)); } catch (_) { v = null; }
+      if (v && v.mode !== 'plain') throw Object.assign(new Error('This cloud folder was set up with an older sync password — use Start over'), { kind: 'legacy' });
+    }
     const [cv, im] = await Promise.all([api.listFolder(PATHS.canvases), api.listFolder(PATHS.images)]);
     const remote = new Map();
     for (const e of cv.entries) { const id = fileId(e); if (id) remote.set(id, e.rev); }
     const remoteImages = new Set(im.entries.map(fileId).filter(Boolean));
-    await syncTags(key);
-    await firstConnection(key, remote);
-    await uploadPictures(key, remoteImages);
+    needs = new Map();
+    await syncTags();
+    await firstConnection(remote);
+    await uploadPictures(remoteImages);
     const ids = new Set([...store.canvasList().map(c => c.id), ...remote.keys(), ...Object.keys(meta.canvases)]);
-    for (const id of ids) await syncCanvas(key, id, remote.get(id) || null);
-    await downloadPictures(key, remoteImages);
+    for (const id of ids) {
+      try { await syncCanvas(id, remote.get(id) || null); } catch (err) {
+        if (!(err instanceof NeedPassword)) throw err;
+        needs.set(id, { id, name: err.name, lock: err.lock });
+      }
+    }
+    await downloadPictures(remoteImages);
     meta.firstDone = true;
     saveMeta();
   }
@@ -256,16 +320,16 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
         again = false;
         try {
           await cycle();
-          setStatus({ state: 'synced', lastSync: now(), pending: 0, message: '' });
+          const list = [...needs.values()];
+          setStatus({ state: list.length ? 'needs' : 'synced', lastSync: now(), pending: 0, needs: list, message: list.length ? list.length + ' canvas' + (list.length === 1 ? ' needs its' : 'es need their') + ' password' : '' });
         } catch (err) {
           if (err instanceof Busy) { setStatus({ state: 'waiting', message: 'Waiting for you to finish' }); setTimeout(syncNow, 2000); break; }
           if (err && err.kind === 'conflict' && tries++ < 3) { again = true; continue; }
           const kind = err && err.kind;
           const pending = meta ? pendingCount() : 0;
           if (kind === 'offline') setStatus({ state: 'offline', pending, message: 'Offline' });
-          else if (kind === 'auth') setStatus({ state: 'auth', pending, message: 'Sign in to Dropbox again' });
-          else if (kind === 'full') setStatus({ state: 'full', pending, message: 'Your Dropbox is full' });
-          else if (kind === 'locked') setStatus({ state: 'locked', pending, message: err.message });
+          else if (kind === 'auth') setStatus({ state: 'auth', pending, message: 'Sign in again' });
+          else if (kind === 'full') setStatus({ state: 'full', pending, message: 'The cloud storage is full' });
           else setStatus({ state: 'error', pending, message: (err && err.message) || String(err) });
           break;
         }
@@ -279,6 +343,13 @@ export function createSyncEngine({ api, getKey, store, pictures = null, repo, de
     get status() { return { ...status }; },
     get running() { return !!running; },
     async reset() { meta = { canvases: {}, tags: { rev: null, base: null }, firstDone: false }; saveMeta(); },
-    pendingCount: () => (meta ? pendingCount() : 0)
+    pendingCount: () => (meta ? pendingCount() : 0),
+    // The cloud copy's lock + name of a canvas (to ask its password).
+    async remoteLock(id) {
+      const f = await api.download(PATHS.canvas(id));
+      if (!f) return null;
+      const obj = await unpackJson(f.bytes);
+      return obj && obj.locked ? { name: obj.name, lock: obj.lock } : null;
+    }
   };
 }
