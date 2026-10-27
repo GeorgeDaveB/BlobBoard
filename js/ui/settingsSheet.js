@@ -20,7 +20,8 @@ const OPTIONS = [
 ];
 
 // motion: { get(), set(next) } — the device's motion switches (app.js).
-export function createSettingsSheet({ host, store, pictures, onRequestClose, motion, syncEl = null }) {
+// display: { get(), set(n) } — description lines on closed blobs (this device).
+export function createSettingsSheet({ host, store, pictures, onRequestClose, motion, display = null, syncEl = null }) {
   const sheet = document.createElement('section');
   sheet.className = 'sheet settings-sheet';
   sheet.setAttribute('role', 'dialog');
@@ -49,6 +50,41 @@ export function createSettingsSheet({ host, store, pictures, onRequestClose, mot
   const motionPanel = createMotionPanel(motion);
   const motionPane = document.createElement('div');
   motionPane.className = 'settings-pane';
+  // Device tab (owner 2026-10-27): description lines on closed blobs, then motion.
+  if (display) {
+    const LMAX = 10;
+    const wrap = document.createElement('div');
+    wrap.className = 'range-field';
+    const top = document.createElement('div');
+    top.className = 'range-top';
+    const lab = document.createElement('label');
+    lab.className = 'field-label';
+    lab.htmlFor = 'notes-lines-range';
+    lab.textContent = 'Description lines on closed blobs';
+    const val = document.createElement('output');
+    val.className = 'range-value';
+    top.append(lab, val);
+    const r = document.createElement('input');
+    r.type = 'range';
+    r.id = 'notes-lines-range';
+    r.min = '0';
+    r.max = String(LMAX + 1);
+    r.step = '1';
+    const hint = document.createElement('small');
+    hint.className = 'range-hint';
+    hint.textContent = 'This device only. 0 = titles only. An opened blob always shows the whole description.';
+    const show = n => { val.textContent = n > LMAX ? 'All' : n === 0 ? 'None' : n + (n === 1 ? ' line' : ' lines'); };
+    const cur = display.get();
+    r.value = String(cur === Infinity ? LMAX + 1 : cur);
+    show(Number(r.value));
+    r.addEventListener('input', () => { const n = Number(r.value); show(n); display.set(n > LMAX ? Infinity : n); });
+    const title = document.createElement('div');
+    title.className = 'field-label settings-section';
+    title.textContent = 'Motion';
+    wrap.append(top, r, hint);
+    motionPane.append(wrap, title);
+    display.onLoad = n => { r.value = String(n === Infinity ? LMAX + 1 : n); show(Number(r.value)); };
+  }
   motionPane.append(motionPanel.el);
   // Pictures (phase 4): the library on this device — add, delete.
   const picsPane = document.createElement('div');
@@ -91,7 +127,7 @@ export function createSettingsSheet({ host, store, pictures, onRequestClose, mot
   syncPane.className = 'settings-pane';
   if (syncEl) syncPane.append(syncEl);
 
-  const tabBtns = [['canvas', 'Canvas', canvasPane], ['tags', 'Tags', tagsPane], ['pictures', 'Pictures', picsPane], ['sync', 'Sync', syncPane], ['motion', 'Motion', motionPane]].filter(t => t[0] !== 'sync' || syncEl).map(([id, text, pane]) => {
+  const tabBtns = [['canvas', 'Canvas', canvasPane], ['tags', 'Tags', tagsPane], ['pictures', 'Pictures', picsPane], ['sync', 'Sync', syncPane], ['motion', 'Device', motionPane]].filter(t => t[0] !== 'sync' || syncEl).map(([id, text, pane]) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'seg-btn';

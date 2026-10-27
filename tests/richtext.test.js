@@ -67,3 +67,23 @@ export const tests = {
     assert(MOTION_KEYS.every(k => PRESETS.full[k] && !PRESETS.off[k]));
   }
 };
+
+// ---- description lines on closed blobs (this device; owner 2026-10-27) ----
+tests['closed blobs show the device’s number of description lines; 0 = none; opened = all'] = async () => {
+  const { createItemEl, updateItemEl, setNotesLines, getNotesLines } = await import('../js/ui/itemView.js');
+  const before = getNotesLines();
+  const item = { id: 'n1', title: 'T', notes: 'one\ntwo\nthree\nfour', notesHtml: '', color: '#ff8a7a', done: false, seed: 1 };
+  const el = createItemEl(item, { onEdit() {} });
+  setNotesLines(5);
+  updateItemEl(el, item, {});
+  assertEqual([el._parts.notes.hidden, document.documentElement.style.getPropertyValue('--notes-lines')], [false, '5']);
+  setNotesLines(0);
+  updateItemEl(el, item, {});
+  assert(el._parts.notes.hidden && !el.classList.contains('has-notes'), 'none when 0');
+  updateItemEl(el, item, { expanded: true });
+  assert(!el._parts.notes.hidden, 'an opened blob shows it');
+  setNotesLines(Infinity);
+  assertEqual([getNotesLines(), document.documentElement.style.getPropertyValue('--notes-lines')], [Infinity, '999']);
+  setNotesLines(before);
+  el._phys.dispose();
+};

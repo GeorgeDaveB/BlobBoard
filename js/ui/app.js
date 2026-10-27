@@ -2,6 +2,7 @@
 // (Android back / Esc closes the top layer — editor, then the expanded tray —
 // instead of leaving the app).
 import { createBoard } from './board.js';
+import { setNotesLines, getNotesLines } from './itemView.js';
 import { createEditSheet, newSessionKey } from './editSheet.js';
 import { initDialogs, toast, choiceDialog, confirmDialog } from './dialogs.js';
 import { createFormationUI, MIN_SELECTED } from './formationPanel.js';
@@ -229,6 +230,18 @@ export function mountApp({ root, store, repo, pictures = null, keys = null }) {
     root.classList.toggle('m-no-ui', !m.ui);
   }
   applyMotion(motion);
+  // Description lines on closed blobs (this device; owner 2026-10-27).
+  const display = {
+    get: () => getNotesLines(),
+    set: n => { setNotesLines(n); repo.setSetting('notesLines', n === Infinity ? 'all' : n); board.render(); }
+  };
+  setNotesLines(3);
+  repo.getSetting('notesLines').then(n => {
+    if (n === undefined || n === null) return;
+    setNotesLines(n === 'all' ? Infinity : Number(n));
+    board.render();
+    if (display.onLoad) display.onLoad(getNotesLines());
+  }).catch(() => {});
   repo.getSetting('motion').then(m => { if (m && typeof m === 'object') applyMotion({ ...defaultMotion(), ...m }); }).catch(() => {});
 
   // ---- Dropbox sync (phase 8) --------------------------------------------------
@@ -253,7 +266,8 @@ export function mountApp({ root, store, repo, pictures = null, keys = null }) {
     motion: {
       get: () => motion,
       set: m => { applyMotion(m); repo.setSetting('motion', m); }
-    }
+    },
+    display
   });
   let settingsLayer = 0;
   // Side panels (settings, item editor, line editor) replace each other.

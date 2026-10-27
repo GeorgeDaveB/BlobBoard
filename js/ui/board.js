@@ -540,16 +540,20 @@ export function createBoard({ host, store, pictures, onEdit, onNotes, onAddInsid
 
     if (els.has(id)) {
       // A blob on this board: move it directly. An expanded group closes first.
-      if (store.ui.expanded[0] === id) store.setExpanded([]);
+      // An open blob (or an open one among the selected) closes first, and is
+      // measured closed — pushes on landing use its closed size (owner bug
+      // 2026-10-27: it used the opened size).
+      const ex = store.ui.expanded[0];
+      if (ex && (ex === id || store.ui.selectedIds.includes(ex))) store.setExpanded([]);
       const el = els.get(id);
-      drag = { ...base, el, ghost: false, size: sizeOf(id), grabX: wp.x - item.x, grabY: wp.y - item.y, x: item.x, y: item.y };
+      drag = { ...base, el, ghost: false, size: measure(id), grabX: wp.x - item.x, grabY: wp.y - item.y, x: item.x, y: item.y };
       el.style.zIndex = 1000000;
       // R24: dragging one of several selected blobs moves them all, keeping
       // their spacing.
       if (store.ui.selectedIds.includes(id)) {
         drag.group = store.ui.selectedIds.filter(x => x !== id && els.has(x) && store.item(x)).map(x => {
           const it = store.item(x);
-          return { id: x, el: els.get(x), dx: it.x - item.x, dy: it.y - item.y, size: sizeOf(x) };
+          return { id: x, el: els.get(x), dx: it.x - item.x, dy: it.y - item.y, size: measure(x) };
         });
         drag.groupIds = new Set(drag.group.map(g => g.id));
         for (const g of drag.group) {

@@ -78,7 +78,7 @@
   opacity: .85;
   overflow-wrap: anywhere;
   /* Up to 3 lines, then fades out (it may hold lists, so no line-clamp). */
-  max-height: calc(1.35em * 3);
+  max-height: calc(1.35em * var(--notes-lines, 3)); /* ⚙ → Device (owner 2026-10-27) */
   overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.1em), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 1.1em), transparent);

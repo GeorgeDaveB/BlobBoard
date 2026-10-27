@@ -1,6 +1,6 @@
 # BlobBoard — Handover
 
-*Last updated: 2026-10-26 · version **2026-10-26b** (canvas passwords) · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
+*Last updated: 2026-10-27 · version **2026-10-27a** · Read this first, then [DESIGN.md](DESIGN.md) for the full spec.*
 
 BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas that you group, reorder, connect with lines and (later) tag. It is a PWA (installable web app) for Windows and Android, plain HTML/CSS/JS with **no build step and no dependencies**, hosted on GitHub Pages. Dropbox sync is planned (phase 8).
 
@@ -56,7 +56,7 @@ BlobBoard is a personal life/task tracker: animated "blobs" on a free canvas tha
 | 8 | Dropbox sync (SlimeGate app, PKCE, encrypted files, 3-way merge, status pill, one-window lock) | ✅ 2026-10-22 — **owner to sign in + test on 2 devices** |
 | 9 | PWA polish (service worker, icons, install, offline) | planned |
 
-Tests: **170 passing** locally (2026-10-26).
+Tests: **171 passing** locally (2026-10-27).
 
 **Important limitations right now (tell anyone taking over):**
 - **Data lives only on each device** (IndexedDB per browser). PC and phone are NOT synced yet; there is no export yet. Clearing site data deletes the boards. Phases 7–8 fix this.
@@ -129,6 +129,7 @@ Tests: **170 passing** locally (2026-10-26).
 | 2026-10-22 | **Phase 8 built**: Dropbox (owner chose it over Google Drive: Drive needs a server for lasting sign-in — draw.io uses one — or hourly reconnects). App "SlimeGate", key in `js/config.js`. Owner asked for **encrypted Dropbox files** → sync passphrase + vault (see DESIGN §11 "as built"). Defaults: first connection keeps everything, canvas delete applies to both devices, 20 backups, device "PC"/"Phone" | Owner Q&A 2026-10-22 |
 | 2026-10-26 | **Passwords optional** (owner): save files default to no password (plain JSON `.blobboard`), optional password; **Export JSON**; **Change file password…** (copy with none / new); sync: choose No password / sync password at first connect, Add / Change / Remove later (all files rewritten; other devices follow). Wording: "password", "cloud" (provider may change later; sync takes any storage API) | Owner request 2026-10-26 |
 | 2026-10-26 | **Reworked (owner: "not how I liked")**: passwords are **per canvas**, managed only from inside the app (canvas menu → **Password ▸** Add / Change / Remove for the loaded canvas) or for a **multi-canvas file** (Save all: none / file password; locked canvases stay locked inside). Menu → **Save & export ▸** submenu. The file-picker "Change file password…" and the folder-wide sync password are gone; cloud copies follow each canvas's password; other devices ask once per locked canvas. Owner's defaults to all 6 questions | Owner Q&A 2026-10-26 |
+| 2026-10-27 | **Description lines on closed blobs** per device (⚙ tab "Motion" renamed **Device**: None / 1–10 / All, default 3; `itemView.setNotesLines`, CSS `--notes-lines`, setting `notesLines`). **Fix:** dragging an open blob closed it but measured it open, so drops pushed others by the opened size — now measured after closing (`board.startDrag` → `measure`). Future: clickable links + link masking | Owner 2026-10-27 |
 | 2026-10-11 | "Pyramid" shown as **Top down** (code id stays `pyramid`); one-line description of Bouncing at the top of its menu; ⚙ Settings on phones = **half the screen** (`.settings-sheet` max-height 50dvh; editors unchanged) | Owner request |
 
 ---
@@ -190,7 +191,7 @@ Tests: **170 passing** locally (2026-10-26).
 - Pictures (IndexedDB `images`, phase 4): `{ id, blob (WebP), w, h, bytes, createdAt, deleted? }`; items point at them with `thumbId`. Cards are drawn when `settings.thumbnails` is on and the picture is on this device (`board.picOf`, passed to `updateItemEl` and trays as `ctx.picOf`).
 - Item kinds (R37/R38): `kind` = 'blob' (default; old items have none) | 'shape' (+ `shape`, `w`, `h`) | 'text' (content in `notesHtml`/`notes`, `color` = text colour). `model.kindOf`, `canMoveInto` (non-blobs never nest), `linkProblem` ('text'). `itemView.updateShapeOrText` draws them; `board` handles taps (selected text → type in place, selected shape → editor), resize (`gestures` mode 'resize' on `.shape-handle`), and refuses nesting; `formationPanel` leaves text out.
 - Tags (IndexedDB `tags`, phase 5; shared by all canvases): `{ id ('t-…'), name, color, createdAt, updatedAt, deleted? }`, held in the store (`store.tags()`, `tag(id)`); items carry `tagIds`. Name matching = `model.foldText` (no case/accents, ς→σ). Filter = screen state `store.ui.filter = { tagIds, all }`; `model.filterMatches` gives the bright set (matches + their ancestors), `board` fades the rest (`.item.faded`, lines via `linksLayer({ faded })`).
-- Sync (phase 8, device settings): `dropbox` (tokens — never read them when debugging), `canvasKeys` (per-canvas keys, see canvasKeys.js), `sync` ({ canvases: { id: { rev, base } }, tags: { rev, base }, firstDone }). Store hooks: `putCanvasFromSync`, `removeCanvasFromSync`, `allTags`, `setTagsFromSync`, `remapTagIds` (events carry `remote: true`).
+- Sync (phase 8, device settings): `dropbox` (tokens — never read them when debugging), `canvasKeys` (per-canvas keys, see canvasKeys.js), `notesLines` (description lines on closed blobs: 0–10 | 'all'), `sync` ({ canvases: { id: { rev, base } }, tags: { rev, base }, firstDone }). Store hooks: `putCanvasFromSync`, `removeCanvasFromSync`, `allTags`, `setTagsFromSync`, `remapTagIds` (events carry `remote: true`).
 - Device settings (IndexedDB `settings`, never synced): `lastCanvasId`, `view:<canvasId>:root`, `mode` ('pan'|'select'), `motion` (R33 switches), `filter:<canvasId>` (tag filter).
 - Store actions: `select`, `selectLink`, `selectMany`, `toggleSelected`, `selectedItems`, `setExpanded`, `expandTo`, `toggleExpand`, `setCanvasSetting(key, value, {coalesce})`, `reorderItem`, `createItem`, `updateItem`, `moveItem`, `moveItems`, `reparentItem`, `reparentItems`, `deleteItem`, `deleteItems`, `pictureUses`, `clearPicture(id, {coalesce})`, `canvasList`, `switchCanvas`, `createCanvas`, `renameCanvas`, `duplicateCanvas`, `deleteCanvas`, `copyItemsTo(ids, canvasId, {move, coalesce})`, `importCanvas(doc, {tagMap})`, `ensureTag(name)`, `updateTag(id, {name, color})` → '' | 'exists' | 'empty', `tagUses`, `deleteTag(id, {coalesce})`, `restoreTag`, `setFilter({tagIds, all})`, `releaseChildren`, `dissolveItems`, `applyFormation(moves, links)`, `undoStep(key)`, `createLink`, `toggleArrow`, `updateLink`, `resetLineLooks`, `deleteLink`, `undo`, `redo` (+ getters `canvas`, `item`, `link`, `canUndo`, `canRedo`).
 - Flow: `ui event → store action → commit()` → (1) JSON snapshot onto the per-canvas undo stack (same `coalesce` key = same step, e.g. one editor session or one slider drag), (2) `repo.saveCanvas`, (3) `fixUi()` repairs screen state, (4) `emit` → `app.js` renders board + chrome. Undo/redo replace the whole doc and emit `history: true`.
@@ -284,7 +285,7 @@ python -m http.server 8000
 - **R34 later:** more royalty formations reusing `pickBlob` + `ringLayout`; "+ lines" for Pyramid; adding minis to a selection on a phone.
 - **Owner to test sync:** PC and phone: ⚙ → Sync → Connect Dropbox → sign in. Then canvas menu → Password ▸ Add password on one canvas → the other device lists it under ⚙ → Sync → type its password once. Then: edit on one, see it on the other; offline edit on the phone then reconnect; clashing edits on the same item; delete a canvas on one.
 - **Phase 9 (ask first):** app polish (icon, offline, update prompt). Later: change sync passphrase; Dropbox production status if > 50 users.
-- **Not built (possible later):** auto-pan while drawing a line near the screen edge; lines between inside items; add/remove single blobs to a selection on a phone; "connect all selected"; rich text in line labels.
+- **Not built (possible later):** clickable links + link masking in descriptions (owner 2026-10-27); auto-pan while drawing a line near the screen edge; lines between inside items; add/remove single blobs to a selection on a phone; "connect all selected"; rich text in line labels.
 - **Parked:** inside boards / sub-canvases; Background Sync.
 
 ---

@@ -22,6 +22,16 @@ import { createPhysics } from './physics.js';
 
 let inlineSeq = 0;
 
+// How many description lines a closed blob shows (this device; owner
+// 2026-10-27): 0–10, or Infinity = all. CSS reads --notes-lines.
+let notesLines = 3;
+export const NOTES_LINES_MAX = 10;
+export function setNotesLines(n) {
+  notesLines = n === Infinity || n > NOTES_LINES_MAX ? Infinity : Math.max(0, Math.round(n));
+  document.documentElement.style.setProperty('--notes-lines', notesLines === Infinity ? '999' : String(notesLines));
+}
+export const getNotesLines = () => notesLines;
+
 export function createItemEl(item, { onEdit, onNotes, mini = false }) {
   const el = document.createElement('div');
   el.className = mini ? 'item mini' : 'item';
@@ -260,13 +270,16 @@ export function updateItemEl(el, item, ctx) {
   }
   if (!el._editingDesc()) showDescText(el);
   showDesc(el);
-  const sig = [item.title, item.notes, item.notesHtml, item.color, item.done].join('\u0001');
+  // Notes on a closed blob: the device's number of lines (0 = none); an
+  // expanded blob always shows the whole description.
+  const showNotes = !!item.notes && (notesLines > 0 || !!ctx.expanded);
+  p.notes.hidden = !showNotes;
+  el.classList.toggle('has-notes', showNotes);
+  const sig = [item.title, item.notes, item.notesHtml, item.color, item.done, notesLines].join('\u0001');
   if (el._sig !== sig) {
     p.title.textContent = item.title || 'Untitled';
     p.title.classList.toggle('untitled', !item.title);
     p.notes.innerHTML = el._notesHtml; // sanitized (richText.js)
-    p.notes.hidden = !item.notes;
-    el.classList.toggle('has-notes', !!item.notes);
     el.classList.toggle('done', item.done);
     p.body.style.setProperty('--c', item.color);
     el.style.setProperty('--lc', item.color); // connect dot
@@ -366,7 +379,7 @@ export function updateItemEl(el, item, ctx) {
   el.classList.toggle('selected', !!ctx.selected);
   // Text needs a squarer outline to stay inside: a bit with notes, a lot
   // when fully expanded (whole description shown). Morphs with a spring.
-  el._phys.setRoundness(card || picOpen ? 0.2 : container ? 0.16 : item.notes ? (ctx.expanded ? 0.42 : 0.72) : 1);
+  el._phys.setRoundness(card || picOpen ? 0.2 : container ? 0.16 : showNotes ? (ctx.expanded ? 0.42 : 0.72) : 1);
 }
 
 // R37 shapes and R38 free text: title (shapes) or formatted text (text),
